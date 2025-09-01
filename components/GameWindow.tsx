@@ -9,13 +9,13 @@ interface GameWindowProps {
   onRestart: () => void;
   eventCounter: number;
   onSaveGame: () => void;
+  onDownloadSave: () => void;
   saveMessage: string;
-  onOpenVisualizeModal: () => void;
 }
 
 const DESCRIBE_PROMPT = "Опиши красочно и во всех деталях текущую обставновку в игре. Не жалей токенов. Сделай это в формате подробнейшего промта для нейросети которая генерирует картинки";
 
-const GameWindow: React.FC<GameWindowProps> = ({ history, onSendAction, isLoading, onRestart, eventCounter, onSaveGame, saveMessage, onOpenVisualizeModal }) => {
+const GameWindow: React.FC<GameWindowProps> = ({ history, onSendAction, isLoading, onRestart, eventCounter, onSaveGame, onDownloadSave, saveMessage }) => {
   const [input, setInput] = useState('');
   const historyEndRef = useRef<HTMLDivElement>(null);
 
@@ -37,7 +37,7 @@ const GameWindow: React.FC<GameWindowProps> = ({ history, onSendAction, isLoadin
   
   const formatContent = (content: string) => {
     // Make bold text (e.g., **Ход 1**) actually bold
-    const boldedContent = content.replace(/\*\*(.*?)\*\*/g, '<strong class="text-cyan-300">$1</strong>');
+    const boldedContent = (content || '').replace(/\*\*(.*?)\*\*/g, '<strong class="text-cyan-300">$1</strong>');
     // Render newlines
     return boldedContent.replace(/\n/g, '<br />');
   };
@@ -45,15 +45,28 @@ const GameWindow: React.FC<GameWindowProps> = ({ history, onSendAction, isLoadin
   return (
     <div className="relative flex flex-col h-full bg-gray-800/50 rounded-lg shadow-2xl border border-gray-700 overflow-hidden">
        <div className="absolute top-4 right-4 flex gap-2 z-10">
-        <button
-          type="button"
-          onClick={onSaveGame}
-          disabled={isLoading}
-          className="bg-cyan-600 hover:bg-cyan-700 disabled:bg-gray-600 text-white font-bold py-2 px-4 rounded-md transition-colors"
-          title="Сохранить игру"
-        >
-          Сохранить
-        </button>
+        <div className="flex rounded-md shadow-sm">
+            <button
+              type="button"
+              onClick={onSaveGame}
+              disabled={isLoading}
+              className="relative inline-flex items-center px-4 py-2 rounded-l-md border border-gray-600 bg-cyan-600 hover:bg-cyan-700 disabled:bg-gray-600 text-sm font-medium text-white focus:z-10 focus:outline-none focus:ring-1 focus:ring-cyan-500 transition-colors"
+              title="Сохранить игру в браузере"
+            >
+              Сохранить
+            </button>
+            <button
+              type="button"
+              onClick={onDownloadSave}
+              disabled={isLoading}
+              className="-ml-px relative inline-flex items-center px-3 py-2 rounded-r-md border border-gray-600 bg-cyan-600 hover:bg-cyan-700 disabled:bg-gray-600 text-sm font-medium text-white focus:z-10 focus:outline-none focus:ring-1 focus:ring-cyan-500 transition-colors"
+              title="Скачать файл сохранения"
+            >
+             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" />
+              </svg>
+            </button>
+        </div>
         <button
           type="button"
           onClick={onRestart}
@@ -110,14 +123,6 @@ const GameWindow: React.FC<GameWindowProps> = ({ history, onSendAction, isLoadin
              className="bg-gray-700 hover:bg-gray-600 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-bold py-2 px-4 rounded-md transition-colors text-sm"
            >
              Опиши детально
-           </button>
-            <button
-             type="button"
-             onClick={onOpenVisualizeModal}
-             disabled={isLoading}
-             className="bg-gray-700 hover:bg-gray-600 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-bold py-2 px-4 rounded-md transition-colors text-sm"
-           >
-             Визуализировать
            </button>
         </div>
         <form onSubmit={handleSubmit} className="flex items-center space-x-2">

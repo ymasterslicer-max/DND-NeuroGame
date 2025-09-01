@@ -10,6 +10,7 @@ export interface GameSettings {
   description: string;
   difficulty: GameDifficulty;
   narrativeStyle: string;
+  eventTimer: number;
 }
 
 export interface GameTurn {
@@ -34,4 +35,5 @@ export interface SaveState {
   avatarUrl: string | null;
   eventCounter: number;
   chatHistory: Content[];
+  eventTimerSetting: number;
 }

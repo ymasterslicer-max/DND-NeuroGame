@@ -1,12 +1,13 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import type { GameSettings, GameTurn, CharacterStatus as CharacterStatusType, InventoryItem, SaveState } from './types';
 import { GameDifficulty } from './types';
-import { initGameSession, sendPlayerAction, recreateChatSession } from './services/geminiService';
+import { initGameSession, sendPlayerAction, recreateChatSession, generateImage } from './services/geminiService';
 import type { Chat } from '@google/genai';
 import GameSetup from './components/GameSetup';
 import GameWindow from './components/GameWindow';
 import CharacterStatus from './components/CharacterStatus';
-import ImageGenerationModal from './components/ImageGenerationModal';
+import ImageGenerationPanel from './components/ImageGenerationPanel';
+import ImageViewerModal from './components/ImageViewerModal';
 
 const SAVE_KEY = 'gemini-rpg-savegame';
 
@@ -74,13 +75,34 @@ const App: React.FC = () => {
   const [characterStatus, setCharacterStatus] = useState<CharacterStatusType | null>(null);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [eventCounter, setEventCounter] = useState(3);
+  const [eventTimerSetting, setEventTimerSetting] = useState(3);
   const [hasSaveData, setHasSaveData] = useState(false);
   const [saveMessage, setSaveMessage] = useState('');
-  const [isVisualizeModalOpen, setIsVisualizeModalOpen] = useState(false);
+  const [turnImageUrl, setTurnImageUrl] = useState<string | null>(null);
+  const [isGeneratingImage, setIsGeneratingImage] = useState(false);
+  const [imageGenerationError, setImageGenerationError] = useState<string | null>(null);
+  const [isImageViewerOpen, setIsImageViewerOpen] = useState(false);
 
   useEffect(() => {
     const savedGame = localStorage.getItem(SAVE_KEY);
     setHasSaveData(!!savedGame);
+  }, []);
+  
+  const generateTurnImage = useCallback(async (gameText: string) => {
+    setIsGeneratingImage(true);
+    setImageGenerationError(null);
+
+    const visualPrompt = `Создай яркую, атмосферную иллюстрацию в стиле цифровой живописи, которая показывает следующую сцену: ${gameText}. Сконцентрируйся на окружении и действиях персонажа, избегай текста на изображении.`;
+
+    try {
+        const imageUrl = await generateImage(visualPrompt);
+        setTurnImageUrl(imageUrl);
+    } catch (err) {
+        const message = err instanceof Error ? err.message : 'Неизвестная ошибка.';
+        setImageGenerationError(message);
+    } finally {
+        setIsGeneratingImage(false);
+    }
   }, []);
 
   const handleStartGame = useCallback(async (settings: GameSettings) => {
@@ -88,20 +110,24 @@ const App: React.FC = () => {
     setError(null);
     setGameHistory([]);
     setCharacterStatus(null);
-    setEventCounter(3);
+    setEventCounter(settings.eventTimer);
+    setEventTimerSetting(settings.eventTimer);
     setAvatarUrl(null);
+    setTurnImageUrl(null);
+    setImageGenerationError(null);
     try {
       const { chat, initialResponse } = await initGameSession(settings);
       setChatSession(chat);
       setGameHistory([{ type: 'game', content: initialResponse }]);
       setIsGameStarted(true);
+      generateTurnImage(initialResponse);
     } catch (err) {
       setError(err instanceof Error ? `Failed to start game: ${err.message}` : 'An unknown error occurred.');
       console.error(err);
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [generateTurnImage]);
 
   const handleSendAction = useCallback(async (action: string) => {
     if (!chatSession || !action.trim()) return;
@@ -120,7 +146,7 @@ const App: React.FC = () => {
 
     if (newCounter <= 0) {
       actionToSend += "\n\n[СИСТЕМНОЕ СООБЩЕНИЕ: Счетчик случайных событий достиг нуля. Сделай бросок на случайное событие согласно правилам.]";
-      setEventCounter(3); // Reset
+      setEventCounter(eventTimerSetting); // Reset
     } else {
       setEventCounter(newCounter);
     }
@@ -140,7 +166,13 @@ const App: React.FC = () => {
       }
 
       const command = action.trim().toLowerCase();
-      if (command === 'статус' || command === 'инвентарь' || command === 'здоровье') {
+      const isMetaCommand = command === 'статус' || command === 'инвентарь' || command === 'здоровье';
+      
+      if (fullResponseContent && !isMetaCommand) {
+          generateTurnImage(fullResponseContent);
+      }
+      
+      if (isMetaCommand) {
           const parsedData = parseStatusFromString(fullResponseContent, command);
           if (parsedData) {
               setCharacterStatus(parsedData);
@@ -155,7 +187,7 @@ const App: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [chatSession, gameHistory, eventCounter]);
+  }, [chatSession, gameHistory, eventCounter, eventTimerSetting, generateTurnImage]);
   
   const handleRestart = () => {
     setIsGameStarted(false);
@@ -164,7 +196,10 @@ const App: React.FC = () => {
     setError(null);
     setCharacterStatus(null);
     setEventCounter(3);
+    setEventTimerSetting(3);
     setAvatarUrl(null);
+    setTurnImageUrl(null);
+    setImageGenerationError(null);
   };
 
   const handleAvatarChange = useCallback((file: File) => {
@@ -175,27 +210,75 @@ const App: React.FC = () => {
       reader.readAsDataURL(file);
   }, []);
 
-  const handleSaveGame = async () => {
-    if (!chatSession || !isGameStarted) return;
+  const getSaveState = async (): Promise<SaveState | null> => {
+    if (!chatSession || !isGameStarted) return null;
     try {
-        // FIX: Use the public getHistory() method instead of accessing the private history property.
-        const chatHistory = await chatSession.getHistory();
-        const gameState: SaveState = {
-            gameHistory,
-            characterStatus,
-            avatarUrl,
-            eventCounter,
-            chatHistory,
-        };
-        localStorage.setItem(SAVE_KEY, JSON.stringify(gameState));
-        setSaveMessage('Игра сохранена!');
-        setTimeout(() => setSaveMessage(''), 3000);
-        setHasSaveData(true);
+      const chatHistory = await chatSession.getHistory();
+      return {
+        gameHistory,
+        characterStatus,
+        avatarUrl,
+        eventCounter,
+        chatHistory,
+        eventTimerSetting,
+      };
     } catch (e) {
-        setError('Не удалось сохранить игру.');
-        console.error(e);
+      setError('Не удалось получить данные для сохранения.');
+      console.error(e);
+      return null;
     }
   };
+
+  const handleSaveGame = async () => {
+    const gameState = await getSaveState();
+    if (!gameState) return;
+    localStorage.setItem(SAVE_KEY, JSON.stringify(gameState));
+    setSaveMessage('Игра сохранена!');
+    setTimeout(() => setSaveMessage(''), 3000);
+    setHasSaveData(true);
+  };
+  
+  const handleDownloadSave = async () => {
+    const gameState = await getSaveState();
+    if (!gameState) return;
+
+    const dataStr = JSON.stringify(gameState, null, 2);
+    const dataBlob = new Blob([dataStr], { type: 'application/json' });
+    const url = URL.createObjectURL(dataBlob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `gemini-rpg-save-${new Date().toISOString()}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    setSaveMessage('Файл сохранения скачан!');
+    setTimeout(() => setSaveMessage(''), 3000);
+  };
+  
+  const applyLoadedState = useCallback((savedState: SaveState) => {
+      const { gameHistory, characterStatus, avatarUrl, eventCounter, chatHistory, eventTimerSetting } = savedState;
+      
+      const chat = recreateChatSession(chatHistory);
+
+      setGameHistory(gameHistory);
+      setCharacterStatus(characterStatus);
+      setAvatarUrl(avatarUrl);
+      setEventCounter(eventCounter);
+      setEventTimerSetting(eventTimerSetting || 3);
+      setChatSession(chat);
+      setIsGameStarted(true);
+      setError(null);
+      setTurnImageUrl(null);
+      setImageGenerationError(null);
+      
+      if (gameHistory.length > 0) {
+          const lastTurn = gameHistory[gameHistory.length - 1];
+          if (lastTurn.type === 'game' && lastTurn.content) {
+              generateTurnImage(lastTurn.content);
+          }
+      }
+  }, [generateTurnImage]);
 
   const handleLoadGame = useCallback(() => {
     const savedGameJSON = localStorage.getItem(SAVE_KEY);
@@ -205,24 +288,40 @@ const App: React.FC = () => {
     }
     try {
         const savedState: SaveState = JSON.parse(savedGameJSON);
-        const { gameHistory, characterStatus, avatarUrl, eventCounter, chatHistory } = savedState;
-        
-        const chat = recreateChatSession(chatHistory);
-
-        setGameHistory(gameHistory);
-        setCharacterStatus(characterStatus);
-        setAvatarUrl(avatarUrl);
-        setEventCounter(eventCounter);
-        setChatSession(chat);
-        setIsGameStarted(true);
-        setError(null);
+        applyLoadedState(savedState);
     } catch (e) {
         setError("Не удалось загрузить игру. Данные могут быть повреждены.");
         console.error(e);
         localStorage.removeItem(SAVE_KEY); 
         setHasSaveData(false);
     }
-  }, []);
+  }, [applyLoadedState]);
+  
+  const handleLoadFromFile = useCallback(async (file: File) => {
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const text = event.target?.result;
+        if (typeof text !== 'string') {
+          throw new Error("Не удалось прочитать файл.");
+        }
+        const savedState: SaveState = JSON.parse(text);
+        // Basic validation
+        if (!savedState.gameHistory || !savedState.chatHistory) {
+            throw new Error("Файл сохранения имеет неверный формат.");
+        }
+        applyLoadedState(savedState);
+      } catch (e) {
+        const message = e instanceof Error ? e.message : "Неизвестная ошибка";
+        setError(`Не удалось загрузить игру из файла: ${message}`);
+        console.error(e);
+      }
+    };
+    reader.onerror = () => {
+      setError("Ошибка при чтении файла сохранения.");
+    };
+    reader.readAsText(file);
+  }, [applyLoadedState]);
 
   return (
     <div className="min-h-screen bg-gray-900 text-gray-200 font-mono flex flex-col items-center p-4">
@@ -240,6 +339,7 @@ const App: React.FC = () => {
                 onStartGame={handleStartGame} 
                 isLoading={isLoading} 
                 onLoadGame={handleLoadGame}
+                onLoadFromFile={handleLoadFromFile}
                 hasSaveData={hasSaveData}
               />
             </div>
@@ -260,19 +360,26 @@ const App: React.FC = () => {
                   onRestart={handleRestart}
                   eventCounter={eventCounter}
                   onSaveGame={handleSaveGame}
+                  onDownloadSave={handleDownloadSave}
                   saveMessage={saveMessage}
-                  onOpenVisualizeModal={() => setIsVisualizeModalOpen(true)}
                 />
               </div>
+              <ImageGenerationPanel 
+                imageUrl={turnImageUrl}
+                isLoading={isGeneratingImage}
+                error={imageGenerationError}
+                onImageClick={() => setIsImageViewerOpen(true)}
+              />
             </div>
           )}
           {error && <div className="mt-4 p-4 bg-red-900/50 text-red-300 border border-red-500 rounded-lg flex-shrink-0">{error}</div>}
         </main>
       </div>
-       <ImageGenerationModal 
-            isOpen={isVisualizeModalOpen}
-            onClose={() => setIsVisualizeModalOpen(false)}
-        />
+      <ImageViewerModal 
+        isOpen={isImageViewerOpen}
+        imageUrl={turnImageUrl}
+        onClose={() => setIsImageViewerOpen(false)}
+      />
     </div>
   );
 };
