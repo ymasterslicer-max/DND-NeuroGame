@@ -4,9 +4,10 @@ interface ImageViewerModalProps {
   isOpen: boolean;
   imageUrl: string | null;
   onClose: () => void;
+  t: (key: any) => string;
 }
 
-const ImageViewerModal: React.FC<ImageViewerModalProps> = ({ isOpen, imageUrl, onClose }) => {
+const ImageViewerModal: React.FC<ImageViewerModalProps> = ({ isOpen, imageUrl, onClose, t }) => {
   if (!isOpen || !imageUrl) {
     return null;
   }
@@ -26,11 +27,11 @@ const ImageViewerModal: React.FC<ImageViewerModalProps> = ({ isOpen, imageUrl, o
         .animate-fade-in { animation: fadeIn 0.3s ease-out forwards; }
       `}</style>
       <div className="relative max-w-4xl max-h-[90vh]" onClick={e => e.stopPropagation()}>
-        <img src={imageUrl} alt="Увеличенное изображение сцены" className="max-w-full max-h-[90vh] object-contain rounded-lg shadow-2xl" />
+        <img src={imageUrl} alt={t('enlargedSceneImage')} className="max-w-full max-h-[90vh] object-contain rounded-lg shadow-2xl" />
         <button
           onClick={onClose}
-          className="absolute -top-3 -right-3 bg-gray-800 rounded-full p-1 text-white hover:bg-gray-700 transition-colors focus:outline-none focus:ring-2 focus:ring-white"
-          aria-label="Закрыть"
+          className="absolute -top-3 -right-3 bg-gray-200 dark:bg-gray-800 rounded-full p-1 text-gray-800 dark:text-white hover:bg-gray-300 dark:hover:bg-gray-700 transition-colors focus:outline-none focus:ring-2 focus:ring-white"
+          aria-label={t('close')}
         >
           <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />

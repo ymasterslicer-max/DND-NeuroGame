@@ -1,18 +1,23 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import type { GameSettings, GameTurn, CharacterStatus as CharacterStatusType, InventoryItem, SaveState } from './types';
+import type { Language } from './i18n';
+import { useTranslation, translations } from './i18n';
 import { GameDifficulty } from './types';
-import { initGameSession, sendPlayerAction, recreateChatSession, generateImage } from './services/geminiService';
+import { initGameSession, sendPlayerAction, recreateChatSession, generateImage, contactGameMaster } from './services/geminiService';
 import type { Chat } from '@google/genai';
 import GameSetup from './components/GameSetup';
 import GameWindow from './components/GameWindow';
 import CharacterStatus from './components/CharacterStatus';
 import ImageGenerationPanel from './components/ImageGenerationPanel';
 import ImageViewerModal from './components/ImageViewerModal';
+import GMContactModal from './components/GMContactModal';
 
 const SAVE_KEY = 'gemini-rpg-savegame';
+const THEME_KEY = 'gemini-rpg-theme';
+const LANGUAGE_KEY = 'gemini-rpg-language';
 
 const parseStatusFromString = (text: string, command: string): Partial<CharacterStatusType> | null => {
-  if (command !== 'статус' && command !== 'инвентарь' && command !== 'здоровье') {
+  if (command !== 'статус' && command !== 'инвентарь' && command !== 'здоровье' && command !== 'status' && command !== 'inventory' && command !== 'health') {
     return null;
   }
 
@@ -21,10 +26,12 @@ const parseStatusFromString = (text: string, command: string): Partial<Character
   let isInventorySection = false;
   const inventory: InventoryItem[] = [];
   const status: { [key: string]: string } = {};
+  
+  const inventoryKeywords = ['инвентарь', 'inventory'];
 
   lines.forEach(line => {
     // Check for the start of the inventory section
-    if (line.toLowerCase().includes('инвентарь')) {
+    if (inventoryKeywords.some(kw => line.toLowerCase().includes(kw))) {
       isInventorySection = true;
       return; // Skip the header line itself
     }
@@ -48,7 +55,7 @@ const parseStatusFromString = (text: string, command: string): Partial<Character
         if (parts.length >= 2) {
             const key = parts[0].trim().replace(/^[-*]\s*/, '').trim();
             const value = parts.slice(1).join(':').trim();
-            if (key && value && !key.toLowerCase().includes('инвентарь')) {
+            if (key && value && !inventoryKeywords.some(kw => key.toLowerCase().includes(kw))) {
                 status[key] = value;
             }
         }
@@ -82,6 +89,32 @@ const App: React.FC = () => {
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
   const [imageGenerationError, setImageGenerationError] = useState<string | null>(null);
   const [isImageViewerOpen, setIsImageViewerOpen] = useState(false);
+  const [isGMContactModalOpen, setIsGMContactModalOpen] = useState(false);
+  const [gmContactHistory, setGmContactHistory] = useState<{type: 'user' | 'gm', content: string}[]>([]);
+  const [isGMContactLoading, setIsGMContactLoading] = useState(false);
+
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => (localStorage.getItem(THEME_KEY) as 'light' | 'dark') || 'dark');
+  const [language, setLanguage] = useState<Language>(() => {
+      const savedLang = localStorage.getItem(LANGUAGE_KEY);
+      return (savedLang && Object.keys(translations).includes(savedLang)) ? savedLang as Language : 'ru';
+  });
+  const t = useTranslation(language);
+
+  // Effect for persisting and applying theme
+  useEffect(() => {
+    localStorage.setItem(THEME_KEY, theme);
+    if (theme === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [theme]);
+
+  // Effect for persisting language
+  useEffect(() => {
+    localStorage.setItem(LANGUAGE_KEY, language);
+  }, [language]);
+
 
   useEffect(() => {
     const savedGame = localStorage.getItem(SAVE_KEY);
@@ -116,7 +149,7 @@ const App: React.FC = () => {
     setTurnImageUrl(null);
     setImageGenerationError(null);
     try {
-      const { chat, initialResponse } = await initGameSession(settings);
+      const { chat, initialResponse } = await initGameSession(settings, language);
       setChatSession(chat);
       setGameHistory([{ type: 'game', content: initialResponse }]);
       setIsGameStarted(true);
@@ -127,7 +160,13 @@ const App: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [generateTurnImage]);
+  }, [generateTurnImage, language]);
+  
+  const statusCommands = useMemo(() => ({
+    ru: ['статус', 'инвентарь', 'здоровье'],
+    en: ['status', 'inventory', 'health']
+  }), []);
+
 
   const handleSendAction = useCallback(async (action: string) => {
     if (!chatSession || !action.trim()) return;
@@ -145,7 +184,9 @@ const App: React.FC = () => {
     const newCounter = eventCounter - 1;
 
     if (newCounter <= 0) {
-      actionToSend += "\n\n[СИСТЕМНОЕ СООБЩЕНИЕ: Счетчик случайных событий достиг нуля. Сделай бросок на случайное событие согласно правилам.]";
+      actionToSend += language === 'ru' 
+        ? "\n\n[СИСТЕМНОЕ СООБЩЕНИЕ: Счетчик случайных событий достиг нуля. Сделай бросок на случайное событие согласно правилам.]"
+        : "\n\n[SYSTEM MESSAGE: The random event counter has reached zero. Make a roll for a random event according to the rules.]";
       setEventCounter(eventTimerSetting); // Reset
     } else {
       setEventCounter(newCounter);
@@ -166,7 +207,7 @@ const App: React.FC = () => {
       }
 
       const command = action.trim().toLowerCase();
-      const isMetaCommand = command === 'статус' || command === 'инвентарь' || command === 'здоровье';
+      const isMetaCommand = statusCommands[language].includes(command);
       
       if (fullResponseContent && !isMetaCommand) {
           generateTurnImage(fullResponseContent);
@@ -175,7 +216,7 @@ const App: React.FC = () => {
       if (isMetaCommand) {
           const parsedData = parseStatusFromString(fullResponseContent, command);
           if (parsedData) {
-              setCharacterStatus(parsedData);
+              setCharacterStatus(prev => ({...prev, ...parsedData}));
           }
       }
 
@@ -187,20 +228,14 @@ const App: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [chatSession, gameHistory, eventCounter, eventTimerSetting, generateTurnImage]);
+  }, [chatSession, gameHistory, eventCounter, eventTimerSetting, generateTurnImage, language, statusCommands]);
   
-  const handleRestart = () => {
-    setIsGameStarted(false);
-    setGameHistory([]);
-    setChatSession(null);
-    setError(null);
-    setCharacterStatus(null);
-    setEventCounter(3);
-    setEventTimerSetting(3);
-    setAvatarUrl(null);
-    setTurnImageUrl(null);
-    setImageGenerationError(null);
-  };
+  const handleRestart = useCallback(() => {
+    if (window.confirm(t('restartConfirmation'))) {
+        // A full page reload is a simple and foolproof way to restart the app.
+        window.location.reload();
+    }
+  }, [t]);
 
   const handleAvatarChange = useCallback((file: File) => {
       const reader = new FileReader();
@@ -221,6 +256,7 @@ const App: React.FC = () => {
         eventCounter,
         chatHistory,
         eventTimerSetting,
+        language
       };
     } catch (e) {
       setError('Не удалось получить данные для сохранения.');
@@ -233,7 +269,7 @@ const App: React.FC = () => {
     const gameState = await getSaveState();
     if (!gameState) return;
     localStorage.setItem(SAVE_KEY, JSON.stringify(gameState));
-    setSaveMessage('Игра сохранена!');
+    setSaveMessage(t('gameSaved'));
     setTimeout(() => setSaveMessage(''), 3000);
     setHasSaveData(true);
   };
@@ -252,12 +288,12 @@ const App: React.FC = () => {
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
-    setSaveMessage('Файл сохранения скачан!');
+    setSaveMessage(t('saveFileDownloaded'));
     setTimeout(() => setSaveMessage(''), 3000);
   };
   
   const applyLoadedState = useCallback((savedState: SaveState) => {
-      const { gameHistory, characterStatus, avatarUrl, eventCounter, chatHistory, eventTimerSetting } = savedState;
+      const { gameHistory, characterStatus, avatarUrl, eventCounter, chatHistory, eventTimerSetting, language: savedLanguage } = savedState;
       
       const chat = recreateChatSession(chatHistory);
 
@@ -266,6 +302,7 @@ const App: React.FC = () => {
       setAvatarUrl(avatarUrl);
       setEventCounter(eventCounter);
       setEventTimerSetting(eventTimerSetting || 3);
+      setLanguage(savedLanguage || 'ru');
       setChatSession(chat);
       setIsGameStarted(true);
       setError(null);
@@ -323,14 +360,54 @@ const App: React.FC = () => {
     reader.readAsText(file);
   }, [applyLoadedState]);
 
+  const handleContactGM = useCallback(async (message: string) => {
+      if (!chatSession) {
+        setError("Игровая сессия не активна для связи с ГМ.");
+        return;
+      }
+      setIsGMContactLoading(true);
+      setGmContactHistory(prev => [...prev, { type: 'user', content: message }]);
+      
+      setGmContactHistory(prev => [...prev, { type: 'gm', content: '' }]);
+
+      try {
+        const gameApiHistory = await chatSession.getHistory();
+        const stream = await contactGameMaster(gameApiHistory, message, language);
+
+        for await (const chunk of stream) {
+          setGmContactHistory(prev => {
+            const latestHistory = [...prev];
+            const lastTurn = latestHistory[latestHistory.length - 1];
+            if (lastTurn && lastTurn.type === 'gm') {
+                latestHistory[latestHistory.length - 1] = {...lastTurn, content: lastTurn.content + chunk };
+            }
+            return latestHistory;
+          });
+        }
+      } catch (err) {
+        const errorMessage = err instanceof Error ? `Ошибка связи с ГМ: ${err.message}` : 'Произошла неизвестная ошибка.';
+        setGmContactHistory(prev => {
+            const latestHistory = [...prev];
+            const lastTurn = latestHistory[latestHistory.length - 1];
+            if (lastTurn && lastTurn.type === 'gm') {
+                latestHistory[latestHistory.length - 1] = {...lastTurn, content: errorMessage };
+            }
+            return latestHistory;
+        });
+      } finally {
+        setIsGMContactLoading(false);
+      }
+  }, [chatSession, language]);
+
+
   return (
-    <div className="min-h-screen bg-gray-900 text-gray-200 font-mono flex flex-col items-center p-4">
+    <div className="min-h-screen bg-white dark:bg-gray-900 text-gray-800 dark:text-gray-200 font-lora flex flex-col items-center p-4 transition-colors duration-300">
       <div className="w-full max-w-7xl flex flex-col h-screen">
-        <header className="text-center py-4 border-b border-gray-700 flex-shrink-0">
-          <h1 className="text-2xl md:text-4xl font-bold text-cyan-400 tracking-wider">
-            Gemini Text Adventure RPG
+        <header className="text-center py-4 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
+          <h1 className="text-2xl md:text-4xl font-bold text-cyan-600 dark:text-cyan-400 tracking-wider font-cinzel">
+            {t('appTitle')}
           </h1>
-          <p className="text-sm text-gray-400 mt-1">Your story, shaped by your choices.</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{t('appSubtitle')}</p>
         </header>
         <main className="flex-grow flex flex-col py-4 min-h-0">
           {!isGameStarted ? (
@@ -341,6 +418,11 @@ const App: React.FC = () => {
                 onLoadGame={handleLoadGame}
                 onLoadFromFile={handleLoadFromFile}
                 hasSaveData={hasSaveData}
+                language={language}
+                setLanguage={setLanguage}
+                theme={theme}
+                setTheme={setTheme}
+                t={t}
               />
             </div>
           ) : (
@@ -349,36 +431,50 @@ const App: React.FC = () => {
                 status={characterStatus} 
                 avatarUrl={avatarUrl} 
                 onAvatarChange={handleAvatarChange}
-                onUpdate={() => handleSendAction('статус')}
+                onUpdate={() => handleSendAction(language === 'ru' ? 'статус' : 'status')}
                 isLoading={isLoading}
+                onRestart={handleRestart}
+                t={t}
               />
               <div className="flex-grow min-w-0 h-full">
                 <GameWindow
                   history={gameHistory}
                   onSendAction={handleSendAction}
                   isLoading={isLoading}
-                  onRestart={handleRestart}
                   eventCounter={eventCounter}
-                  onSaveGame={handleSaveGame}
-                  onDownloadSave={handleDownloadSave}
-                  saveMessage={saveMessage}
+                  t={t}
                 />
               </div>
               <ImageGenerationPanel 
                 imageUrl={turnImageUrl}
-                isLoading={isGeneratingImage}
+                isGenerating={isGeneratingImage}
+                isGameLoading={isLoading}
                 error={imageGenerationError}
                 onImageClick={() => setIsImageViewerOpen(true)}
+                onSaveGame={handleSaveGame}
+                onDownloadSave={handleDownloadSave}
+                saveMessage={saveMessage}
+                onContactGM={() => setIsGMContactModalOpen(true)}
+                t={t}
               />
             </div>
           )}
-          {error && <div className="mt-4 p-4 bg-red-900/50 text-red-300 border border-red-500 rounded-lg flex-shrink-0">{error}</div>}
+          {error && <div className="mt-4 p-4 bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300 border border-red-400 dark:border-red-500 rounded-lg flex-shrink-0">{error}</div>}
         </main>
       </div>
       <ImageViewerModal 
         isOpen={isImageViewerOpen}
         imageUrl={turnImageUrl}
         onClose={() => setIsImageViewerOpen(false)}
+        t={t}
+      />
+      <GMContactModal
+        isOpen={isGMContactModalOpen}
+        onClose={() => setIsGMContactModalOpen(false)}
+        history={gmContactHistory}
+        isLoading={isGMContactLoading}
+        onSendMessage={handleContactGM}
+        t={t}
       />
     </div>
   );
