@@ -1,5 +1,5 @@
 import { GoogleGenAI, Chat, type Content, Modality } from '@google/genai';
-import type { GameSettings } from '../types';
+import type { GameSettings, CharacterStatus } from '../types';
 import { GAME_MASTER_PROMPT_RU, GAME_MASTER_PROMPT_EN } from '../constants';
 import type { Language } from '../i18n';
 
@@ -362,4 +362,78 @@ export const contactGameMaster = async (gameHistory: Content[], userMessage: str
       const errorMessage = error instanceof Error ? error.message : "Произошла неизвестная ошибка при связи с ГМ.";
       throw new Error(`Ошибка: ${errorMessage}`);
   }
+};
+
+export const getItemDescription = async (
+    itemName: string,
+    characterStatus: CharacterStatus | null,
+    gameSettings: GameSettings | null,
+    language: Language
+): Promise<string> => {
+    const prompt = language === 'ru' ? `
+        Ты — Гейм-мастер текстовой RPG. Игрок осматривает предмет из своего инвентаря.
+        Дай этому предмету художественное и атмосферное описание в контексте игры.
+
+        **Сеттинг:** ${gameSettings?.setting || 'Неизвестен'}
+        **Персонаж:** ${gameSettings?.description || 'Неизвестен'}
+        **Предмет:** ${itemName}
+
+        **Твоя задача:**
+        1. Опиши внешний вид предмета (2-3 предложения).
+        2. Намекни на его возможное происхождение или назначение.
+        3. Если у предмета есть очевидные функции, кратко упомяни их.
+        4. Сохраняй стиль повествования игры.
+
+        Отвечай только описанием, без лишних фраз.
+    ` : `
+        You are the Game Master of a text-based RPG. The player is inspecting an item from their inventory.
+        Give this item a flavorful and atmospheric description in the context of the game.
+
+        **Setting:** ${gameSettings?.setting || 'Unknown'}
+        **Character:** ${gameSettings?.description || 'Unknown'}
+        **Item:** ${itemName}
+
+        **Your task:**
+        1. Describe the item's appearance (2-3 sentences).
+        2. Hint at its possible origin or purpose.
+        3. If the item has obvious functions, briefly mention them.
+        4. Maintain the narrative style of the game.
+
+        Respond only with the description, without any extra phrases.
+    `;
+
+    try {
+        const response = await ai.models.generateContent({
+            model: "gemini-2.5-pro",
+            contents: prompt,
+        });
+        return response.text;
+    } catch (error) {
+        console.error("Item description generation failed:", error);
+        throw new Error(language === 'ru' ? "Не удалось получить описание предмета." : "Failed to get item description.");
+    }
+};
+
+export const generateMapImage = async (settingDescription: string, language: Language): Promise<string> => {
+    const prompt = language === 'ru' ? `
+        Создай стилизованную карту мира для фэнтезийной RPG на основе следующего описания.
+        Стиль: старый пергамент, рисованная от руки, с компасной розой и небольшими иконками для ключевых мест.
+        Не добавляй на карту никакого текста или названий.
+
+        **Описание мира:** ${settingDescription}
+    ` : `
+        Create a stylized world map for a fantasy RPG based on the following description.
+        Style: old parchment, hand-drawn, with a compass rose and small icons for key locations.
+        Do not add any text or labels to the map.
+
+        **World Description:** ${settingDescription}
+    `;
+
+    try {
+        const imageUrl = await generateImage(prompt);
+        return imageUrl;
+    } catch (error) {
+        console.error("Map image generation failed:", error);
+        throw new Error(language === 'ru' ? "Не удалось сгенерировать карту." : "Failed to generate map.");
+    }
 };

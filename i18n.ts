@@ -8,6 +8,7 @@ export const translations = {
     light: 'Светлая',
     dark: 'Темная',
     send: 'Отправить',
+    unknownError: 'Неизвестная ошибка.',
 
     // App Header
     appTitle: 'Gemini Text Adventure RPG',
@@ -30,6 +31,10 @@ export const translations = {
     loadGame: 'Загрузить игру',
     loadFromFile: 'Загрузить из файла',
     randomizeTooltip: 'Сгенерировать случайный вариант',
+    errorLoadGame: "Не удалось загрузить игру. Данные могут быть повреждены.",
+    errorLoadFromFile: "Не удалось загрузить игру из файла",
+    errorInvalidSaveFile: "Файл сохранения имеет неверный формат.",
+    saveDataNotFound: "Сохраненные данные не найдены.",
     
     // GameWindow
     saveGame: 'Сохранить',
@@ -45,22 +50,29 @@ export const translations = {
     randomEventCounter: 'Ходов до случайного события',
     contactGMTitle: 'Связаться с Гейм-мастером (OOC)',
 
-    // CharacterStatus
+    // CharacterStatus & Journal
     status: 'Статус',
+    journal: 'Журнал',
+    characterSheet: 'Лист персонажа',
     update: 'Обновить',
-    uploadAvatar: 'Загрузить аватар',
-    avatar: 'Аватар',
-    upload: 'Загрузить',
     statusUpdatePrompt: 'Нажмите "Обновить" или введите "статус", чтобы увидеть информацию.',
     inventory: 'Инвентарь',
+    journalEmpty: 'Журнал пока пуст. Начните свое приключение!',
     restartConfirmation: 'Вы уверены, что хотите начать заново? Весь несохраненный прогресс будет потерян.',
 
-    // ImageGenerationPanel
+    // ImageGenerationPanel & World Panels
+    scene: 'Сцена',
+    npcs: 'NPC',
+    map: 'Карта',
     sceneVisualization: 'Визуализация сцены',
     generating: 'Генерация...',
     clickToEnlarge: 'Нажмите, чтобы увеличить',
     imageWillAppearHere: 'Здесь появится изображение текущей сцены.',
     imageGeneratedAutomatically: 'Изображение генерируется автоматически после каждого хода.',
+    noNpcsMet: 'Вы еще не встретили ни одного важного персонажа.',
+    noPortrait: 'Нет портрета',
+    worldMap: 'Карта мира',
+    mapWillAppearHere: 'Карта мира появится здесь после начала игры.',
 
     // Modals
     close: 'Закрыть',
@@ -70,7 +82,17 @@ export const translations = {
     contactGM: 'Связь с Гейм-мастером',
     gmThinks: 'ГМ думает...',
     gmInputPlaceholder: 'Ваш вопрос к ГМ...',
-    
+    errorGMSessionInactive: "Игровая сессия не активна для связи с ГМ.",
+    errorGMContact: "Ошибка связи с ГМ",
+    // ItemDetailModal
+    itemDetails: 'Детали предмета',
+    description: 'Описание',
+    actions: 'Действия',
+    use: 'Использовать',
+    drop: 'Выбросить',
+    errorGetItemDesc: 'Не удалось получить описание предмета.',
+    errorGetDataForSave: 'Не удалось получить данные для сохранения.',
+
     // Difficulties
     Normal: 'Обычная',
     Hardcore: 'Хардкор',
@@ -85,6 +107,8 @@ export const translations = {
     light: 'Light',
     dark: 'Dark',
     send: 'Send',
+    unknownError: 'An unknown error occurred.',
+
 
     // App Header
     appTitle: 'Gemini Text Adventure RPG',
@@ -107,6 +131,10 @@ export const translations = {
     loadGame: 'Load Game',
     loadFromFile: 'Load from File',
     randomizeTooltip: 'Generate a random option',
+    errorLoadGame: "Failed to load game. Data may be corrupted.",
+    errorLoadFromFile: "Failed to load game from file",
+    errorInvalidSaveFile: "Invalid save file format.",
+    saveDataNotFound: "No saved data found.",
     
     // GameWindow
     saveGame: 'Save',
@@ -122,22 +150,29 @@ export const translations = {
     randomEventCounter: 'Turns until random event',
     contactGMTitle: 'Contact Game Master (OOC)',
     
-    // CharacterStatus
+    // CharacterStatus & Journal
     status: 'Status',
+    journal: 'Journal',
+    characterSheet: 'Character Sheet',
     update: 'Update',
-    uploadAvatar: 'Upload avatar',
-    avatar: 'Avatar',
-    upload: 'Upload',
     statusUpdatePrompt: 'Click "Update" or type "status" to see information.',
     inventory: 'Inventory',
+    journalEmpty: 'The journal is empty. Begin your adventure!',
     restartConfirmation: 'Are you sure you want to restart? All unsaved progress will be lost.',
 
-    // ImageGenerationPanel
+    // ImageGenerationPanel & World Panels
+    scene: 'Scene',
+    npcs: 'NPCs',
+    map: 'Map',
     sceneVisualization: 'Scene Visualization',
     generating: 'Generating...',
     clickToEnlarge: 'Click to enlarge',
     imageWillAppearHere: 'The image of the current scene will appear here.',
     imageGeneratedAutomatically: 'The image is generated automatically after each turn.',
+    noNpcsMet: 'You have not met any important characters yet.',
+    noPortrait: 'No portrait',
+    worldMap: 'World Map',
+    mapWillAppearHere: 'The world map will appear here after the game starts.',
 
     // Modals
     close: 'Close',
@@ -147,6 +182,16 @@ export const translations = {
     contactGM: 'Contact Game Master',
     gmThinks: 'GM is thinking...',
     gmInputPlaceholder: 'Your question to the GM...',
+    errorGMSessionInactive: "Game session is not active to contact GM.",
+    errorGMContact: "Error contacting GM",
+    // ItemDetailModal
+    itemDetails: 'Item Details',
+    description: 'Description',
+    actions: 'Actions',
+    use: 'Use',
+    drop: 'Drop',
+    errorGetItemDesc: 'Failed to get item description.',
+    errorGetDataForSave: 'Failed to get data for save.',
 
     // Difficulties
     Normal: 'Normal',

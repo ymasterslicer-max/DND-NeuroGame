@@ -1,3 +1,4 @@
+
 import type { Content } from '@google/genai';
 import type { Language } from './i18n';
 
@@ -26,16 +27,26 @@ export interface InventoryItem {
 }
 
 export interface CharacterStatus {
-  [key: string]: string | any; // Allow for inventory array
+  [key:string]: string | any; // Allow for inventory array
   inventory?: InventoryItem[];
+}
+
+export interface Npc {
+  name: string;
+  description: string;
+  portraitUrl: string | null;
+  isGeneratingPortrait: boolean;
 }
 
 export interface SaveState {
   gameHistory: GameTurn[];
   characterStatus: CharacterStatus | null;
-  avatarUrl: string | null;
   eventCounter: number;
   chatHistory: Content[];
   eventTimerSetting: number;
   language: Language;
+  journal: string[];
+  npcs: Npc[];
+  mapImageUrl: string | null;
+  gameSettings: GameSettings | null;
 }

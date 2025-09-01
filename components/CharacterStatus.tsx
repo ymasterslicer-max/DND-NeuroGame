@@ -1,108 +1,114 @@
-import React, { useRef } from 'react';
-import type { CharacterStatus as CharacterStatusType } from '../types';
+import React, { useState } from 'react';
+import type { CharacterStatus as CharacterStatusType, InventoryItem } from '../types';
 import LoadingSpinner from './LoadingSpinner';
 
 interface CharacterStatusProps {
   status: CharacterStatusType | null;
-  avatarUrl: string | null;
-  onAvatarChange: (file: File) => void;
   onUpdate: () => void;
   isLoading: boolean;
   onRestart: () => void;
+  journal: string[];
+  onItemClick: (item: InventoryItem) => void;
   t: (key: any) => string;
 }
 
-const CharacterStatus: React.FC<CharacterStatusProps> = ({ status, avatarUrl, onAvatarChange, onUpdate, isLoading, onRestart, t }) => {
+const CharacterStatus: React.FC<CharacterStatusProps> = ({ status, onUpdate, isLoading, onRestart, journal, onItemClick, t }) => {
+  const [activeTab, setActiveTab] = useState<'status' | 'journal'>('status');
+  
   const generalStatusEntries = status ? Object.entries(status).filter(([key]) => key !== 'inventory') : [];
   const inventory = status?.inventory ?? [];
   const hasStatus = generalStatusEntries.length > 0;
   const hasInventory = inventory.length > 0;
-  
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleAvatarClick = () => {
-    fileInputRef.current?.click();
-  };
-
-  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    if (event.target.files && event.target.files[0]) {
-      onAvatarChange(event.target.files[0]);
-    }
-  };
+  const TabButton: React.FC<{ tabId: 'status' | 'journal'; children: React.ReactNode }> = ({ tabId, children }) => (
+    <button
+      onClick={() => setActiveTab(tabId)}
+      className={`flex-1 py-2 px-4 text-sm font-medium transition-colors ${
+        activeTab === tabId
+          ? 'bg-cyan-600/20 dark:bg-cyan-500/30 text-cyan-700 dark:text-cyan-300'
+          : 'text-gray-500 hover:bg-gray-200/50 dark:text-gray-400 dark:hover:bg-gray-700/50'
+      }`}
+    >
+      {children}
+    </button>
+  );
 
   return (
     <aside className="w-80 flex-shrink-0 bg-gray-50 dark:bg-gray-800/50 p-4 rounded-lg border border-gray-200 dark:border-gray-700 hidden lg:flex flex-col max-h-full transition-colors duration-300">
-      <input 
-        type="file" 
-        ref={fileInputRef}
-        onChange={handleFileChange}
-        className="hidden"
-        accept="image/*"
-      />
-      <div 
-        className="w-40 h-40 mx-auto mb-4 bg-gray-200 dark:bg-gray-700 rounded-lg flex items-center justify-center border-2 border-gray-300 dark:border-gray-600 relative group cursor-pointer overflow-hidden"
-        onClick={handleAvatarClick}
-        title={t('uploadAvatar')}
-      >
-        {avatarUrl ? (
-          <img src={avatarUrl} alt="Character Avatar" className="w-full h-full object-cover" />
-        ) : (
-          <div className="text-gray-500 dark:text-gray-400 text-center">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-            <span className="text-sm mt-1">{t('avatar')}</span>
-          </div>
-        )}
-         <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-            <span className="text-white font-bold">{t('upload')}</span>
+      
+      <div className="flex items-center justify-between mb-2 pb-2">
+        <div className="flex w-full bg-gray-100 dark:bg-gray-900 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
+            <TabButton tabId="status">{t('status')}</TabButton>
+            <div className="w-px bg-gray-200 dark:bg-gray-700"></div>
+            <TabButton tabId="journal">{t('journal')}</TabButton>
         </div>
       </div>
       
-      <div className="flex items-center justify-between mb-4 border-b border-gray-200 dark:border-gray-600 pb-2">
-        <h3 className="text-lg font-bold text-cyan-700 dark:text-cyan-400 font-cinzel">{t('status')}</h3>
-        <button 
-          onClick={onUpdate} 
-          disabled={isLoading}
-          className="flex items-center gap-2 text-sm bg-cyan-600/20 dark:bg-cyan-600/50 hover:bg-cyan-600/40 dark:hover:bg-cyan-600 disabled:bg-gray-400 dark:disabled:bg-gray-600 disabled:cursor-not-allowed text-cyan-800 dark:text-white font-bold py-1 px-3 rounded-md transition-colors"
-          title={t('update')}
-        >
-          {isLoading ? <LoadingSpinner/> : t('update')}
-        </button>
-      </div>
-      
-      <div className="overflow-y-auto">
-        {!hasStatus && !hasInventory ? (
-          <div className="flex-grow flex items-center justify-center h-full pt-8">
-            <p className="text-gray-500 dark:text-gray-400 text-sm text-center">{t('statusUpdatePrompt')}</p>
-          </div>
-        ) : (
-          <>
-            {hasStatus && (
-              <dl className="space-y-2 text-sm">
-                {generalStatusEntries.map(([key, value]) => (
-                  <div key={key} className="flex justify-between items-start gap-4">
-                    <dt className="font-semibold text-gray-500 dark:text-gray-400 whitespace-nowrap">{key}:</dt>
-                    <dd className="text-gray-800 dark:text-gray-200 text-right break-words">{String(value)}</dd>
-                  </div>
-                ))}
-              </dl>
-            )}
+      <div className="overflow-y-auto flex-grow min-h-0">
+        {activeTab === 'status' && (
+          <div>
+            <div className="flex items-center justify-between mb-4 mt-2">
+                <h3 className="text-lg font-bold text-cyan-700 dark:text-cyan-400 font-cinzel">{t('characterSheet')}</h3>
+                <button 
+                onClick={onUpdate} 
+                disabled={isLoading}
+                className="flex items-center gap-2 text-sm bg-cyan-600/20 dark:bg-cyan-600/50 hover:bg-cyan-600/40 dark:hover:bg-cyan-600 disabled:bg-gray-400 dark:disabled:bg-gray-600 disabled:cursor-not-allowed text-cyan-800 dark:text-white font-bold py-1 px-3 rounded-md transition-colors"
+                title={t('update')}
+                >
+                {isLoading ? <LoadingSpinner/> : t('update')}
+                </button>
+            </div>
+             {!hasStatus && !hasInventory ? (
+                <div className="flex-grow flex items-center justify-center h-full pt-8">
+                    <p className="text-gray-500 dark:text-gray-400 text-sm text-center">{t('statusUpdatePrompt')}</p>
+                </div>
+                ) : (
+                <>
+                    {hasStatus && (
+                    <dl className="space-y-2 text-sm">
+                        {generalStatusEntries.map(([key, value]) => (
+                        <div key={key} className="flex justify-between items-start gap-4">
+                            <dt className="font-semibold text-gray-500 dark:text-gray-400 whitespace-nowrap">{key}:</dt>
+                            <dd className="text-gray-800 dark:text-gray-200 text-right break-words">{String(value)}</dd>
+                        </div>
+                        ))}
+                    </dl>
+                    )}
 
-            {hasInventory && (
-              <>
-                <h4 className="text-md font-bold text-cyan-700 dark:text-cyan-400 mt-6 mb-2 border-t border-gray-200 dark:border-gray-600 pt-3 font-cinzel">{t('inventory')}</h4>
-                <ul className="space-y-1 text-sm">
-                  {inventory.map((item, index) => (
-                    <li key={index} className="flex justify-between items-center gap-2 p-2 rounded-md hover:bg-gray-200/50 dark:hover:bg-gray-700/50 transition-colors">
-                      <span className="text-gray-700 dark:text-gray-300 break-words">{item.name}</span>
-                      <span className="text-gray-500 dark:text-gray-400 font-mono bg-gray-200 dark:bg-gray-900 px-2 py-0.5 rounded text-xs flex-shrink-0">x{item.quantity}</span>
-                    </li>
-                  ))}
-                </ul>
-              </>
+                    {hasInventory && (
+                    <>
+                        <h4 className="text-md font-bold text-cyan-700 dark:text-cyan-400 mt-6 mb-2 border-t border-gray-200 dark:border-gray-600 pt-3 font-cinzel">{t('inventory')}</h4>
+                        <ul className="space-y-1 text-sm">
+                        {inventory.map((item, index) => (
+                            <li key={index}>
+                               <button onClick={() => onItemClick(item)} className="w-full flex justify-between items-center gap-2 p-2 rounded-md hover:bg-gray-200/50 dark:hover:bg-gray-700/50 transition-colors text-left">
+                                    <span className="text-gray-700 dark:text-gray-300 break-words">{item.name}</span>
+                                    <span className="text-gray-500 dark:text-gray-400 font-mono bg-gray-200 dark:bg-gray-900 px-2 py-0.5 rounded text-xs flex-shrink-0">x{item.quantity}</span>
+                                </button>
+                            </li>
+                        ))}
+                        </ul>
+                    </>
+                    )}
+                </>
             )}
-          </>
+          </div>
+        )}
+        {activeTab === 'journal' && (
+           <div>
+                <h3 className="text-lg font-bold text-cyan-700 dark:text-cyan-400 font-cinzel my-2 text-center">{t('journal')}</h3>
+                {journal.length === 0 ? (
+                    <p className="text-gray-500 dark:text-gray-400 text-sm text-center mt-8">{t('journalEmpty')}</p>
+                ) : (
+                    <ul className="space-y-4 text-sm">
+                        {journal.map((entry, index) => (
+                            <li key={index} className="border-l-2 border-cyan-600/50 pl-3 text-gray-600 dark:text-gray-400 italic">
+                                {entry}
+                            </li>
+                        ))}
+                    </ul>
+                )}
+           </div>
         )}
       </div>
        <div className="mt-auto pt-4 border-t border-gray-200 dark:border-gray-600">
