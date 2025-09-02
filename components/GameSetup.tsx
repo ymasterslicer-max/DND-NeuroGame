@@ -1,9 +1,12 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import type { GameSettings } from '../types';
 import { GameDifficulty } from '../types';
 import LoadingSpinner from './LoadingSpinner';
 import { generateEnhancedSetting, generateCharacter, summarizeSettingFromFile, generateRandomIdea } from '../services/geminiService';
 import type { Language } from '../i18n';
+import { styles } from '../styles';
+import type { AuthorStyle } from '../styles';
+
 
 interface GameSetupProps {
   onStartGame: (settings: GameSettings) => void;
@@ -39,8 +42,11 @@ const GameSetup: React.FC<GameSetupProps> = ({
   const [setting, setSetting] = useState('Киберпанк-мегаполис под вечным дождем');
   const [description, setDescription] = useState('Бывший корпоративный детектив с кибернетической рукой, ищущий правду о своем прошлом.');
   const [difficulty, setDifficulty] = useState<GameDifficulty>(GameDifficulty.Normal);
-  const [narrativeStyle, setNarrativeStyle] = useState('Нуарный детектив с элементами экзистенциализма.');
   const [eventTimer, setEventTimer] = useState(3);
+  
+  const [selectedStyleId, setSelectedStyleId] = useState<string | null>(null);
+  const [customStyle, setCustomStyle] = useState('');
+  const [selectedGenre, setSelectedGenre] = useState<string>(Object.keys(styles.ru)[0]);
   
   const [isEnhancingSetting, setIsEnhancingSetting] = useState(false);
   const [isGeneratingCharacter, setIsGeneratingCharacter] = useState(false);
@@ -49,18 +55,41 @@ const GameSetup: React.FC<GameSetupProps> = ({
 
   const [isRandomizingSetting, setIsRandomizingSetting] = useState(false);
   const [isRandomizingDescription, setIsRandomizingDescription] = useState(false);
-  const [isRandomizingStyle, setIsRandomizingStyle] = useState(false);
 
-  
+  const styleLibrary = useMemo(() => styles[language], [language]);
+
   const saveFileInputRef = useRef<HTMLInputElement>(null);
   const settingFileInputRef = useRef<HTMLInputElement>(null);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (setting.trim() && description.trim() && narrativeStyle.trim()) {
-      onStartGame({ setting, description, difficulty, narrativeStyle, eventTimer, language });
+    let finalNarrativeStyle = '';
+    if (customStyle.trim()) {
+      finalNarrativeStyle = customStyle;
+    } else if (selectedStyleId) {
+      for (const genre of Object.values(styleLibrary)) {
+        const found = genre.find((author: AuthorStyle) => author.id === selectedStyleId);
+        if (found) {
+          finalNarrativeStyle = found.prompt;
+          break;
+        }
+      }
+    }
+    
+    if (setting.trim() && description.trim()) {
+      onStartGame({ setting, description, difficulty, narrativeStyle: finalNarrativeStyle, eventTimer, language });
     }
   };
+  
+  const handleStyleSelect = (author: AuthorStyle | null) => {
+      setSelectedStyleId(author ? author.id : null);
+      setCustomStyle('');
+  };
+
+  const handleCustomStyleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+      setCustomStyle(e.target.value);
+      setSelectedStyleId(null);
+  }
 
   const handleEnhanceSetting = async () => {
     if (!setting.trim() || isEnhancingSetting) return;
@@ -92,7 +121,7 @@ const GameSetup: React.FC<GameSetupProps> = ({
   };
 
   const createRandomHandler = (
-    type: 'setting' | 'description' | 'style',
+    type: 'setting' | 'description',
     setLoading: (loading: boolean) => void,
     setValue: (value: string) => void
   ) => async () => {
@@ -110,7 +139,6 @@ const GameSetup: React.FC<GameSetupProps> = ({
 
   const handleRandomSetting = createRandomHandler('setting', setIsRandomizingSetting, setSetting);
   const handleRandomDescription = createRandomHandler('description', setIsRandomizingDescription, setDescription);
-  const handleRandomStyle = createRandomHandler('style', setIsRandomizingStyle, setNarrativeStyle);
 
 
   const handleSaveFileLoadClick = () => {
@@ -151,7 +179,7 @@ const GameSetup: React.FC<GameSetupProps> = ({
     }
   };
 
-  const anyLoading = isLoading || isEnhancingSetting || isSummarizing || isGeneratingCharacter || isRandomizingSetting || isRandomizingDescription || isRandomizingStyle;
+  const anyLoading = isLoading || isEnhancingSetting || isSummarizing || isGeneratingCharacter || isRandomizingSetting || isRandomizingDescription;
 
 
   return (
@@ -283,35 +311,64 @@ const GameSetup: React.FC<GameSetupProps> = ({
             </div>
           </div>
         </div>
+        
+        {/* New Style Selection UI */}
         <div>
-          <label htmlFor="narrativeStyle" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-            {t('narrativeStyleLabel')}
-          </label>
-          <div className="flex items-start gap-2">
-            <input
-              id="narrativeStyle"
-              type="text"
-              value={narrativeStyle}
-              onChange={(e) => setNarrativeStyle(e.target.value)}
-              className="w-full flex-grow bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-md py-2 px-3 text-gray-800 dark:text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-cyan-500 transition"
-              placeholder={t('narrativeStylePlaceholder')}
-              required
-              disabled={anyLoading}
-            />
-             <div className="flex flex-col gap-2">
-                <button
-                    type="button"
-                    onClick={handleRandomStyle}
-                    disabled={anyLoading}
-                    className="flex-shrink-0 flex items-center justify-center p-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 disabled:bg-gray-400 dark:disabled:bg-gray-800 disabled:cursor-not-allowed rounded-md transition-colors"
-                    title={t('randomizeTooltip')}
-                >
-                  {isRandomizingStyle ? <LoadingSpinner /> : <SparklesIcon />}
-                </button>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{t('styleSelectionTitle')}</label>
+            <div className="bg-white dark:bg-gray-900/50 border border-gray-300 dark:border-gray-600 rounded-md p-3">
+                <div className="flex flex-wrap gap-2 border-b border-gray-200 dark:border-gray-700 pb-3 mb-3">
+                    {Object.keys(styleLibrary).map(genre => (
+                        <button
+                            key={genre}
+                            type="button"
+                            onClick={() => setSelectedGenre(genre)}
+                            disabled={anyLoading}
+                            className={`px-3 py-1 text-sm rounded-md transition-colors disabled:opacity-50 ${selectedGenre === genre ? 'bg-cyan-600 text-white font-semibold' : 'bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600'}`}
+                        >
+                            {genre}
+                        </button>
+                    ))}
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                     <button
+                        type="button"
+                        onClick={() => handleStyleSelect(null)}
+                        disabled={anyLoading}
+                        title={t('noneStyleTooltip')}
+                        className={`w-full text-left p-2 rounded-md border-2 transition-colors ${!selectedStyleId && !customStyle.trim() ? 'border-cyan-500 bg-cyan-500/10' : 'border-transparent bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700'}`}
+                    >
+                       <span className="font-semibold text-gray-800 dark:text-gray-200">{t('none')}</span>
+                    </button>
+                    {styleLibrary[selectedGenre]?.map((authorStyle: AuthorStyle) => (
+                        <button
+                            key={authorStyle.id}
+                            type="button"
+                            onClick={() => handleStyleSelect(authorStyle)}
+                            disabled={anyLoading}
+                            title={authorStyle.tooltip}
+                            className={`w-full text-left p-2 rounded-md border-2 transition-colors ${selectedStyleId === authorStyle.id ? 'border-cyan-500 bg-cyan-500/10' : 'border-transparent bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700'}`}
+                        >
+                            <span className="font-semibold text-gray-800 dark:text-gray-200">{authorStyle.author}</span>
+                        </button>
+                    ))}
+                </div>
             </div>
-          </div>
         </div>
-         <div>
+
+        <div>
+            <label htmlFor="custom-style" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{t('customStyleLabel')}</label>
+            <textarea
+                id="custom-style"
+                value={customStyle}
+                onChange={handleCustomStyleChange}
+                className="w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-md py-2 px-3 text-gray-800 dark:text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-cyan-500 transition"
+                placeholder={t('customStylePlaceholder')}
+                rows={3}
+                disabled={anyLoading}
+            />
+        </div>
+        
+        <div>
           <label htmlFor="event-timer" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
             {t('turnsUntilRandomEvent')}
           </label>
@@ -326,6 +383,7 @@ const GameSetup: React.FC<GameSetupProps> = ({
             disabled={anyLoading}
           />
         </div>
+
         <div>
           <span className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{t('difficulty')}</span>
           <div className="flex space-x-4">

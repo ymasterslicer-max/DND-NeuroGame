@@ -1,4 +1,3 @@
-
 export const translations = {
   ru: {
     // Common
@@ -10,6 +9,7 @@ export const translations = {
     dark: 'Темная',
     send: 'Отправить',
     unknownError: 'Неизвестная ошибка.',
+    none: 'Нет',
 
     // App Header
     appTitle: 'Gemini Text Adventure RPG',
@@ -24,8 +24,10 @@ export const translations = {
     characterDescriptionLabel: 'Описание персонажа (кто вы?)',
     characterDescriptionPlaceholder: 'Например: Старый волшебник, потерявший память',
     inventCharacter: 'Детальный персонаж',
-    narrativeStyleLabel: 'Стиль повествования',
-    narrativeStylePlaceholder: 'Например: В стиле Терри Пратчетта, с иронией',
+    styleSelectionTitle: 'Выбор стиля повествования',
+    noneStyleTooltip: 'Отключить специальный стиль повествования',
+    customStyleLabel: 'Свой стиль повествования',
+    customStylePlaceholder: 'Введите здесь свои подробные инструкции для Гейм-мастера...',
     turnsUntilRandomEvent: 'Ходов до случайного события',
     difficulty: 'Сложность',
     startAdventure: 'Начать приключение',
@@ -119,7 +121,7 @@ export const translations = {
     dark: 'Dark',
     send: 'Send',
     unknownError: 'An unknown error occurred.',
-
+    none: 'None',
 
     // App Header
     appTitle: 'Gemini Text Adventure RPG',
@@ -134,8 +136,10 @@ export const translations = {
     characterDescriptionLabel: 'Character Description (who are you?)',
     characterDescriptionPlaceholder: 'e.g., An old wizard who has lost their memory',
     inventCharacter: 'Detailed Character',
-    narrativeStyleLabel: 'Narrative Style',
-    narrativeStylePlaceholder: 'e.g., In the style of Terry Pratchett, with irony',
+    styleSelectionTitle: 'Narrative Style Selection',
+    noneStyleTooltip: 'Disable special narrative style',
+    customStyleLabel: 'Custom Narrative Style',
+    customStylePlaceholder: 'Enter your own detailed instructions for the Game Master here...',
     turnsUntilRandomEvent: 'Turns until random event',
     difficulty: 'Difficulty',
     startAdventure: 'Start Adventure',

@@ -1,4 +1,3 @@
-
 import { GoogleGenAI, Chat, type Content, Modality } from '@google/genai';
 import type { GameSettings, CharacterStatus, ImageModel, GameTurn } from '../types';
 import { GAME_MASTER_PROMPT_RU, GAME_MASTER_PROMPT_EN } from '../constants';
@@ -37,7 +36,7 @@ export const initGameSession = async (settings: GameSettings, language: Language
     - Сеттинг: ${settings.setting}
     - Описание персонажа: ${settings.description}
     - Сложность: ${settings.difficulty}
-    - Стиль повествования: ${settings.narrativeStyle}
+    - Стиль повествования: ${settings.narrativeStyle || 'Стандартный стиль ГМ'}
     - Ходов до случайного события: ${settings.eventTimer}
 
     Начни игру. Сгенерируй первого персонажа, локацию и ситуацию согласно этим настройкам и правилам. Твой первый ответ должен быть **Ход 1**.
@@ -46,7 +45,7 @@ export const initGameSession = async (settings: GameSettings, language: Language
     - Setting: ${settings.setting}
     - Character Description: ${settings.description}
     - Difficulty: ${settings.difficulty}
-    - Narrative Style: ${settings.narrativeStyle}
+    - Narrative Style: ${settings.narrativeStyle || 'Standard GM style'}
     - Turns until random event: ${settings.eventTimer}
 
     Start the game. Generate the initial character, location, and situation according to these settings and rules. Your first response must be **Turn 1**.
@@ -158,7 +157,7 @@ export const generateEnhancedSetting = async (idea: string, language: Language):
             **Original Idea:** "${idea}"
 
             **Enhancement Instructions:**
-            1.  **Lore:** Write a brief but rich lore for the setting. Who inhab कहां this world? What are the key factions or powers?
+            1.  **Lore:** Write a brief but rich lore for the setting. Who inhabits this world? What are the key factions or powers?
             2.  **Current Situation:** Describe what is happening in the world right now. A major conflict, a recent event, a tense political situation? This should be the starting point for the adventure.
             3.  **Backstory:** Provide a brief history of the world that led to the current situation. What came before? What great event changed everything?
             4.  **Unique Details:** Add 2-3 interesting, unusual details or features of the world. These could be strange laws, unique technologies, anomalous phenomena, or cultural peculiarities. For example: "In this world, shadows are alive and can steal memories."
