@@ -1,3 +1,4 @@
+
 export const translations = {
   ru: {
     // Common
@@ -57,13 +58,13 @@ export const translations = {
     update: 'Обновить',
     statusUpdatePrompt: 'Нажмите "Обновить" или введите "статус", чтобы увидеть информацию.',
     inventory: 'Инвентарь',
+    effects: 'Эффекты',
     journalEmpty: 'Журнал пока пуст. Начните свое приключение!',
     restartConfirmation: 'Вы уверены, что хотите начать заново? Весь несохраненный прогресс будет потерян.',
 
     // ImageGenerationPanel & World Panels
     scene: 'Сцена',
     npcs: 'NPC',
-    map: 'Карта',
     sceneVisualization: 'Визуализация сцены',
     generating: 'Генерация...',
     clickToEnlarge: 'Нажмите, чтобы увеличить',
@@ -71,8 +72,11 @@ export const translations = {
     imageGeneratedAutomatically: 'Изображение генерируется автоматически после каждого хода.',
     noNpcsMet: 'Вы еще не встретили ни одного важного персонажа.',
     noPortrait: 'Нет портрета',
-    worldMap: 'Карта мира',
-    mapWillAppearHere: 'Карта мира появится здесь после начала игры.',
+    imageModelLabel: 'Модель изображения',
+    imagen4: 'Imagen 4.0 (Качество)',
+    geminiFlashImage: 'Gemini Flash (Скорость)',
+    imageModelNone: 'Нет',
+    showAsciiMap: 'Показать карту',
 
     // Modals
     close: 'Закрыть',
@@ -92,6 +96,13 @@ export const translations = {
     drop: 'Выбросить',
     errorGetItemDesc: 'Не удалось получить описание предмета.',
     errorGetDataForSave: 'Не удалось получить данные для сохранения.',
+    // NpcDetailModal
+    npcDetails: 'Информация о персонаже',
+    // AsciiMapModal
+    asciiMapModalTitle: 'Карта местности',
+    errorGeneratingMap: 'Не удалось сгенерировать карту. Попробуйте позже.',
+    mapGeneratedOnRequest: 'Карта генерируется по запросу.',
+
 
     // Difficulties
     Normal: 'Обычная',
@@ -157,13 +168,13 @@ export const translations = {
     update: 'Update',
     statusUpdatePrompt: 'Click "Update" or type "status" to see information.',
     inventory: 'Inventory',
+    effects: 'Effects',
     journalEmpty: 'The journal is empty. Begin your adventure!',
     restartConfirmation: 'Are you sure you want to restart? All unsaved progress will be lost.',
 
     // ImageGenerationPanel & World Panels
     scene: 'Scene',
     npcs: 'NPCs',
-    map: 'Map',
     sceneVisualization: 'Scene Visualization',
     generating: 'Generating...',
     clickToEnlarge: 'Click to enlarge',
@@ -171,8 +182,11 @@ export const translations = {
     imageGeneratedAutomatically: 'The image is generated automatically after each turn.',
     noNpcsMet: 'You have not met any important characters yet.',
     noPortrait: 'No portrait',
-    worldMap: 'World Map',
-    mapWillAppearHere: 'The world map will appear here after the game starts.',
+    imageModelLabel: 'Image Model',
+    imagen4: 'Imagen 4.0 (Quality)',
+    geminiFlashImage: 'Gemini Flash (Speed)',
+    imageModelNone: 'None',
+    showAsciiMap: 'Show Map',
 
     // Modals
     close: 'Close',
@@ -192,6 +206,13 @@ export const translations = {
     drop: 'Drop',
     errorGetItemDesc: 'Failed to get item description.',
     errorGetDataForSave: 'Failed to get data for save.',
+    // NpcDetailModal
+    npcDetails: 'Character Information',
+    // AsciiMapModal
+    asciiMapModalTitle: 'Area Map',
+    errorGeneratingMap: 'Could not generate map. Please try again later.',
+    mapGeneratedOnRequest: 'Map is generated on request.',
+
 
     // Difficulties
     Normal: 'Normal',

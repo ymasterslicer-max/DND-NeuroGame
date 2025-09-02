@@ -1,5 +1,6 @@
+
 import { GoogleGenAI, Chat, type Content, Modality } from '@google/genai';
-import type { GameSettings, CharacterStatus } from '../types';
+import type { GameSettings, CharacterStatus, ImageModel, GameTurn } from '../types';
 import { GAME_MASTER_PROMPT_RU, GAME_MASTER_PROMPT_EN } from '../constants';
 import type { Language } from '../i18n';
 
@@ -79,30 +80,55 @@ export const sendPlayerAction = async (chat: Chat, action: string): Promise<Asyn
     return stream;
 };
 
-export const generateImage = async (prompt: string): Promise<string> => {
+export const generateImage = async (prompt: string, model: ImageModel): Promise<string> => {
+    if (model === 'none') {
+        throw new Error("Image generation is disabled.");
+    }
     try {
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash-image-preview',
-            contents: {
-                parts: [
-                    {
-                        text: prompt,
-                    },
-                ],
-            },
-            config: {
-                responseModalities: [Modality.IMAGE, Modality.TEXT],
-            },
-        });
+        if (model === 'imagen-4.0-generate-001') {
+            const response = await ai.models.generateImages({
+                model: 'imagen-4.0-generate-001',
+                prompt: prompt,
+                config: {
+                  numberOfImages: 1,
+                  outputMimeType: 'image/jpeg',
+                  aspectRatio: '1:1',
+                },
+            });
+    
+            if (response.generatedImages && response.generatedImages.length > 0) {
+                const base64ImageBytes: string = response.generatedImages[0].image.imageBytes;
+                return `data:image/jpeg;base64,${base64ImageBytes}`;
+            } else {
+                 throw new Error("Image generation response did not contain any images.");
+            }
 
-        const imagePart = response.candidates?.[0]?.content?.parts?.find(part => part.inlineData);
-
-        if (imagePart && imagePart.inlineData) {
-            const base64ImageBytes: string = imagePart.inlineData.data;
-            const mimeType = imagePart.inlineData.mimeType;
-            return `data:${mimeType};base64,${base64ImageBytes}`;
+        } else if (model === 'gemini-2.5-flash-image-preview') {
+            const response = await ai.models.generateContent({
+                model: 'gemini-2.5-flash-image-preview',
+                contents: {
+                    parts: [
+                        {
+                            text: prompt,
+                        },
+                    ],
+                },
+                config: {
+                    responseModalities: [Modality.IMAGE, Modality.TEXT],
+                },
+            });
+    
+            const imagePart = response.candidates?.[0]?.content?.parts?.find(part => part.inlineData);
+    
+            if (imagePart && imagePart.inlineData) {
+                const base64ImageBytes: string = imagePart.inlineData.data;
+                const mimeType = imagePart.inlineData.mimeType;
+                return `data:${mimeType};base64,${base64ImageBytes}`;
+            } else {
+                throw new Error("Image generation response did not contain image data.");
+            }
         } else {
-            throw new Error("Не удалось сгенерировать изображение. Ответ не содержит данных изображения.");
+             throw new Error(`Unsupported image generation model: ${model}`);
         }
     } catch (error) {
         console.error("Image generation failed:", error);
@@ -132,7 +158,7 @@ export const generateEnhancedSetting = async (idea: string, language: Language):
             **Original Idea:** "${idea}"
 
             **Enhancement Instructions:**
-            1.  **Lore:** Write a brief but rich lore for the setting. Who inhabits this world? What are the key factions or powers?
+            1.  **Lore:** Write a brief but rich lore for the setting. Who inhab कहां this world? What are the key factions or powers?
             2.  **Current Situation:** Describe what is happening in the world right now. A major conflict, a recent event, a tense political situation? This should be the starting point for the adventure.
             3.  **Backstory:** Provide a brief history of the world that led to the current situation. What came before? What great event changed everything?
             4.  **Unique Details:** Add 2-3 interesting, unusual details or features of the world. These could be strange laws, unique technologies, anomalous phenomena, or cultural peculiarities. For example: "In this world, shadows are alive and can steal memories."
@@ -414,26 +440,69 @@ export const getItemDescription = async (
     }
 };
 
-export const generateMapImage = async (settingDescription: string, language: Language): Promise<string> => {
+export const generateAsciiMap = async (gameHistory: GameTurn[], language: Language): Promise<string> => {
+    const gameHistoryText = gameHistory
+        .map(turn => `${turn.type === 'player' ? '> ' : ''}${turn.content}`)
+        .join('\n\n');
+    
     const prompt = language === 'ru' ? `
-        Создай стилизованную карту мира для фэнтезийной RPG на основе следующего описания.
-        Стиль: старый пергамент, рисованная от руки, с компасной розой и небольшими иконками для ключевых мест.
-        Не добавляй на карту никакого текста или названий.
+        Ты — картограф для текстовой RPG в стиле roguelike. Твоя задача — создать текстовую (ASCII) карту текущей местности на основе последних событий в игре, используя символы и эмодзи.
 
-        **Описание мира:** ${settingDescription}
+        **Контекст игры (последние события):**
+        ---
+        ${gameHistoryText}
+        ---
+
+        **Инструкции:**
+        1.  **Проанализируй контекст:** Определи, где находится игрок (комната, пещера, лес, улица города).
+        2.  **Создай карту:** Нарисуй карту этой локации, используя текстовые символы (ASCII) и эмодзи для наглядности.
+        3.  **Примеры обозначений (используй их или похожие):**
+            *   👤 (@) - позиция игрока.
+            *   🧱 (#) - стены.
+            *   🚪 (+) - двери.
+            *   🌲 (T) - деревья.
+            *   💧 (~) - вода.
+            *   💰 ($) - сокровище или важный предмет.
+            *   👹 (e) - враг.
+            *   ❔ (!) - интересный объект.
+            *   Пустое пространство: '.' или ' '
+        4.  **Композиция:** Карта должна быть понятной и читаемой. Не делай ее слишком большой (примерно 20-30 строк, 40-60 символов в ширину).
+        5.  **Легенда:** ПОД картой ОБЯЗАТЕЛЬНО добавь раздел "Легенда:", где ты объяснишь все использованные тобой символы и эмодзи.
+        6.  **Формат ответа:** Верни ТОЛЬКО карту и легенду под ней. Не добавляй никакого другого текста, приветствий, объяснений или markdown-форматирования (вроде \`\`\`).
     ` : `
-        Create a stylized world map for a fantasy RPG based on the following description.
-        Style: old parchment, hand-drawn, with a compass rose and small icons for key locations.
-        Do not add any text or labels to the map.
+        You are a cartographer for a roguelike text-based RPG. Your task is to create a text (ASCII) map of the current area based on the latest events in the game, using symbols and emoji.
 
-        **World Description:** ${settingDescription}
+        **Game Context (latest events):**
+        ---
+        ${gameHistoryText}
+        ---
+
+        **Instructions:**
+        1.  **Analyze the context:** Determine where the player is (a room, cave, forest, city street).
+        2.  **Create the map:** Draw a map of this location using text characters (ASCII) and emoji for clarity.
+        3.  **Example Symbols (use these or similar):**
+            *   👤 (@) - player's position.
+            *   🧱 (#) - walls.
+            *   🚪 (+) - doors.
+            *   🌲 (T) - trees.
+            *   💧 (~) - water.
+            *   💰 ($) - treasure or important item.
+            *   👹 (e) - enemy.
+            *   ❔ (!) - point of interest.
+            *   Empty space: '.' or ' '
+        4.  **Composition:** The map should be clear and readable. Don't make it too large (about 20-30 lines high, 40-60 characters wide).
+        5.  **Legend:** BENEATH the map, you MUST add a "Legend:" section where you explain all the symbols and emoji you used.
+        6.  **Response Format:** Return ONLY the map and its legend below it. Do not add any other text, greetings, explanations, or markdown formatting (like \`\`\`).
     `;
 
     try {
-        const imageUrl = await generateImage(prompt);
-        return imageUrl;
+        const response = await ai.models.generateContent({
+            model: "gemini-2.5-pro",
+            contents: prompt,
+        });
+        return response.text;
     } catch (error) {
-        console.error("Map image generation failed:", error);
+        console.error("ASCII map generation failed:", error);
         throw new Error(language === 'ru' ? "Не удалось сгенерировать карту." : "Failed to generate map.");
     }
 };

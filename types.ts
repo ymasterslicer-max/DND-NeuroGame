@@ -29,6 +29,7 @@ export interface InventoryItem {
 export interface CharacterStatus {
   [key:string]: string | any; // Allow for inventory array
   inventory?: InventoryItem[];
+  effects?: string[];
 }
 
 export interface Npc {
@@ -47,6 +48,7 @@ export interface SaveState {
   language: Language;
   journal: string[];
   npcs: Npc[];
-  mapImageUrl: string | null;
   gameSettings: GameSettings | null;
 }
+
+export type ImageModel = 'imagen-4.0-generate-001' | 'gemini-2.5-flash-image-preview' | 'none';

@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import type { CharacterStatus as CharacterStatusType, InventoryItem } from '../types';
 import LoadingSpinner from './LoadingSpinner';
@@ -15,10 +16,12 @@ interface CharacterStatusProps {
 const CharacterStatus: React.FC<CharacterStatusProps> = ({ status, onUpdate, isLoading, onRestart, journal, onItemClick, t }) => {
   const [activeTab, setActiveTab] = useState<'status' | 'journal'>('status');
   
-  const generalStatusEntries = status ? Object.entries(status).filter(([key]) => key !== 'inventory') : [];
+  const generalStatusEntries = status ? Object.entries(status).filter(([key]) => key !== 'inventory' && key !== 'effects') : [];
   const inventory = status?.inventory ?? [];
+  const effects = status?.effects ?? [];
   const hasStatus = generalStatusEntries.length > 0;
   const hasInventory = inventory.length > 0;
+  const hasEffects = effects.length > 0;
 
   const TabButton: React.FC<{ tabId: 'status' | 'journal'; children: React.ReactNode }> = ({ tabId, children }) => (
     <button
@@ -58,7 +61,7 @@ const CharacterStatus: React.FC<CharacterStatusProps> = ({ status, onUpdate, isL
                 {isLoading ? <LoadingSpinner/> : t('update')}
                 </button>
             </div>
-             {!hasStatus && !hasInventory ? (
+             {!hasStatus && !hasInventory && !hasEffects ? (
                 <div className="flex-grow flex items-center justify-center h-full pt-8">
                     <p className="text-gray-500 dark:text-gray-400 text-sm text-center">{t('statusUpdatePrompt')}</p>
                 </div>
@@ -73,6 +76,19 @@ const CharacterStatus: React.FC<CharacterStatusProps> = ({ status, onUpdate, isL
                         </div>
                         ))}
                     </dl>
+                    )}
+
+                    {hasEffects && (
+                    <>
+                        <h4 className="text-md font-bold text-cyan-700 dark:text-cyan-400 mt-6 mb-2 border-t border-gray-200 dark:border-gray-600 pt-3 font-cinzel">{t('effects')}</h4>
+                        <ul className="space-y-1 text-sm">
+                        {effects.map((effect, index) => (
+                            <li key={index} className="flex p-1 rounded-md">
+                                <span className="text-gray-700 dark:text-gray-300 break-words">{effect}</span>
+                            </li>
+                        ))}
+                        </ul>
+                    </>
                     )}
 
                     {hasInventory && (

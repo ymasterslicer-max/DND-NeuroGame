@@ -1,9 +1,9 @@
 
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
-import type { GameSettings, GameTurn, CharacterStatus as CharacterStatusType, InventoryItem, SaveState, Npc } from './types';
+import type { GameSettings, GameTurn, CharacterStatus as CharacterStatusType, InventoryItem, SaveState, Npc, ImageModel } from './types';
 import type { Language } from './i18n';
 import { useTranslation, translations } from './i18n';
-import { initGameSession, sendPlayerAction, recreateChatSession, generateImage, contactGameMaster, getItemDescription, generateMapImage } from './services/geminiService';
+import { initGameSession, sendPlayerAction, recreateChatSession, generateImage, contactGameMaster, getItemDescription, generateAsciiMap } from './services/geminiService';
 import type { Chat } from '@google/genai';
 import GameSetup from './components/GameSetup';
 import GameWindow from './components/GameWindow';
@@ -12,6 +12,8 @@ import ImageGenerationPanel from './components/ImageGenerationPanel';
 import ImageViewerModal from './components/ImageViewerModal';
 import GMContactModal from './components/GMContactModal';
 import ItemDetailModal from './components/ItemDetailModal';
+import NpcDetailModal from './components/NpcDetailModal';
+import AsciiMapModal from './components/AsciiMapModal';
 
 const SAVE_KEY = 'gemini-rpg-savegame';
 const THEME_KEY = 'gemini-rpg-theme';
@@ -45,56 +47,79 @@ const parseGamedata = (text: string): { gameText: string; journalEntry: string |
     return { gameText, journalEntry, newNpcs };
 };
 
-const parseStatusFromString = (text: string, command: string): Partial<CharacterStatusType> | null => {
-  if (command !== 'статус' && command !== 'инвентарь' && command !== 'здоровье' && command !== 'status' && command !== 'inventory' && command !== 'health') {
-    return null;
-  }
+const parseStatusAndXML = (responseText: string): { humanText: string; statusData: Partial<CharacterStatusType> | null } => {
+    const statusDataRegex = /<statusdata>([\s\S]*?)<\/statusdata>/;
+    const match = responseText.match(statusDataRegex);
 
-  const combinedStatus: Partial<CharacterStatusType> = {};
-  const lines = text.split('\n');
-  let isInventorySection = false;
-  const inventory: InventoryItem[] = [];
-  const status: { [key: string]: string } = {};
-  
-  const inventoryKeywords = ['инвентарь', 'inventory'];
-
-  lines.forEach(line => {
-    if (inventoryKeywords.some(kw => line.toLowerCase().includes(kw))) {
-      isInventorySection = true;
-      return;
+    if (!match) {
+        return { humanText: responseText, statusData: null };
     }
 
-    if (isInventorySection) {
-      const itemMatch = line.match(/^\s*[-*]\s*(.+?)(?:\s*\((?:x|х)(\d+)\))?\s*$/);
-      if (itemMatch) {
-        const name = itemMatch[1].trim();
-        const quantity = itemMatch[2] ? parseInt(itemMatch[2], 10) : 1;
-        inventory.push({ name, quantity });
-      } else if (line.trim() === '' || (line.includes(':') && !line.match(/^\s*[-*]/))) {
-        isInventorySection = false;
-      }
-    }
+    const humanText = responseText.substring(0, match.index).trim();
+    const xmlContent = match[1];
     
-    if (!isInventorySection) {
-       const parts = line.split(':');
-        if (parts.length >= 2) {
-            const key = parts[0].trim().replace(/^[-*]\s*/, '').trim();
-            const value = parts.slice(1).join(':').trim();
-            if (key && value && !inventoryKeywords.some(kw => key.toLowerCase().includes(kw))) {
+    const combinedStatus: Partial<CharacterStatusType> = {};
+    const inventory: InventoryItem[] = [];
+    const effects: string[] = [];
+    const status: { [key: string]: string } = {};
+
+    // Parse status key-value pairs
+    const statusRegex = /<status>([\s\S]*?)<\/status>/;
+    const statusMatch = xmlContent.match(statusRegex);
+    if (statusMatch) {
+        const statusContent = statusMatch[1];
+        const propertyRegex = /<([a-zA-Zа-яА-Я\s_.-]+)>([\s\S]*?)<\/\1>/g;
+        let propMatch;
+        while ((propMatch = propertyRegex.exec(statusContent)) !== null) {
+            const key = propMatch[1].trim();
+            const value = propMatch[2].trim();
+            if (key && value) {
                 status[key] = value;
             }
         }
     }
-  });
 
-  if (Object.keys(status).length > 0) {
-      Object.assign(combinedStatus, status);
-  }
-  if (inventory.length > 0) {
-      combinedStatus.inventory = inventory;
-  }
-
-  return Object.keys(combinedStatus).length > 0 ? combinedStatus : null;
+    // Parse inventory
+    const inventoryRegex = /<inventory>([\s\S]*?)<\/inventory>/;
+    const inventoryMatch = xmlContent.match(inventoryRegex);
+    if (inventoryMatch) {
+        const inventoryContent = inventoryMatch[1];
+        const itemRegex = /<item\s+name="([^"]+)"\s+quantity="(\d+)"\s*\/>/g;
+        let itemMatch;
+        while ((itemMatch = itemRegex.exec(inventoryContent)) !== null) {
+            inventory.push({
+                name: itemMatch[1],
+                quantity: parseInt(itemMatch[2], 10),
+            });
+        }
+    }
+    
+    // Parse effects
+    const effectsRegex = /<effects>([\s\S]*?)<\/effects>/;
+    const effectsMatch = xmlContent.match(effectsRegex);
+    if (effectsMatch) {
+        const effectsContent = effectsMatch[1];
+        const effectRegex = /<effect\s+name="([^"]+)"(?:\s+duration="([^"]+)")?\s*\/>/g;
+        let effectMatch;
+        while ((effectMatch = effectRegex.exec(effectsContent)) !== null) {
+            const name = effectMatch[1];
+            const duration = effectMatch[2];
+            effects.push(duration ? `${name} (${duration})` : name);
+        }
+    }
+    
+    if (Object.keys(status).length > 0) {
+        Object.assign(combinedStatus, status);
+    }
+    if (inventory.length > 0) {
+        combinedStatus.inventory = inventory;
+    }
+    if (effects.length > 0) {
+        combinedStatus.effects = effects;
+    }
+    
+    const statusData = Object.keys(combinedStatus).length > 0 ? combinedStatus : null;
+    return { humanText, statusData };
 };
 
 
@@ -114,17 +139,24 @@ const App: React.FC = () => {
   // New State
   const [journal, setJournal] = useState<string[]>([]);
   const [npcs, setNpcs] = useState<Npc[]>([]);
-  const [mapImageUrl, setMapImageUrl] = useState<string | null>(null);
-  const [isGeneratingMap, setIsGeneratingMap] = useState(false);
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
   const [isItemModalOpen, setIsItemModalOpen] = useState(false);
   const [itemDescription, setItemDescription] = useState('');
   const [isItemDescLoading, setIsItemDescLoading] = useState(false);
+  const [selectedNpc, setSelectedNpc] = useState<Npc | null>(null);
+  const [isNpcModalOpen, setIsNpcModalOpen] = useState(false);
+  
+  const [isAsciiMapModalOpen, setIsAsciiMapModalOpen] = useState(false);
+  const [asciiMapContent, setAsciiMapContent] = useState<string | null>(null);
+  const [isAsciiMapLoading, setIsAsciiMapLoading] = useState(false);
+
 
   const [turnImageUrl, setTurnImageUrl] = useState<string | null>(null);
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
   const [imageGenerationError, setImageGenerationError] = useState<string | null>(null);
+  const [imageGenerationModel, setImageGenerationModel] = useState<ImageModel>('imagen-4.0-generate-001');
   const [isImageViewerOpen, setIsImageViewerOpen] = useState(false);
+  const [imageToView, setImageToView] = useState<string | null>(null);
   const [isGMContactModalOpen, setIsGMContactModalOpen] = useState(false);
   const [gmContactHistory, setGmContactHistory] = useState<{type: 'user' | 'gm', content: string}[]>([]);
   const [isGMContactLoading, setIsGMContactLoading] = useState(false);
@@ -149,21 +181,33 @@ const App: React.FC = () => {
     setHasSaveData(!!localStorage.getItem(SAVE_KEY));
   }, []);
 
+  const openImageViewer = (url: string | null) => {
+    if (url) {
+      setImageToView(url);
+      setIsImageViewerOpen(true);
+    }
+  };
+
   const generateTurnImage = useCallback(async (gameText: string) => {
+    if (imageGenerationModel === 'none') {
+        setTurnImageUrl(null);
+        setImageGenerationError(null);
+        return;
+    }
     setIsGeneratingImage(true);
     setImageGenerationError(null);
     const visualPrompt = t('language') === 'ru'
         ? `Создай яркую, атмосферную иллюстрацию в стиле цифровой живописи, которая показывает следующую сцену: ${gameText}. Сконцентрируйся на окружении и действиях персонажа, избегай текста на изображении.`
         : `Create a vivid, atmospheric illustration in a digital painting style that shows the following scene: ${gameText}. Focus on the environment and character actions, avoid text in the image.`;
     try {
-        const imageUrl = await generateImage(visualPrompt);
+        const imageUrl = await generateImage(visualPrompt, imageGenerationModel);
         setTurnImageUrl(imageUrl);
     } catch (err) {
         setImageGenerationError(err instanceof Error ? err.message : t('unknownError'));
     } finally {
         setIsGeneratingImage(false);
     }
-  }, [t]);
+  }, [t, imageGenerationModel]);
 
   const generateNpcPortrait = useCallback(async (npcName: string, npcDescription: string) => {
     setNpcs(prev => prev.map(n => n.name === npcName ? { ...n, isGeneratingPortrait: true } : n));
@@ -171,25 +215,33 @@ const App: React.FC = () => {
         ? `Создай портрет персонажа в стиле фэнтези-арта для RPG. Персонаж: ${npcName}. Описание: ${npcDescription}. Стиль: реалистичный, детальный, фокус на лице и характере.`
         : `Create a character portrait in a fantasy art style for an RPG. Character: ${npcName}. Description: ${npcDescription}. Style: realistic, detailed, focus on the face and character.`;
     try {
-        const imageUrl = await generateImage(visualPrompt);
+        const modelForNpc = imageGenerationModel === 'none' ? 'imagen-4.0-generate-001' : imageGenerationModel;
+        const imageUrl = await generateImage(visualPrompt, modelForNpc);
         setNpcs(prev => prev.map(n => n.name === npcName ? { ...n, portraitUrl: imageUrl, isGeneratingPortrait: false } : n));
     } catch (err) {
         console.error(`Failed to generate portrait for ${npcName}:`, err);
         setNpcs(prev => prev.map(n => n.name === npcName ? { ...n, isGeneratingPortrait: false } : n)); // Stop loading on error
     }
-  }, [t]);
+  }, [t, imageGenerationModel]);
 
-  const generateInitialMap = useCallback(async (setting: string) => {
-      setIsGeneratingMap(true);
+  const handleShowAsciiMap = useCallback(async () => {
+      setIsAsciiMapModalOpen(true);
+      setIsAsciiMapLoading(true);
+      setAsciiMapContent(null);
       try {
-          const url = await generateMapImage(setting, language);
-          setMapImageUrl(url);
+          // Provide last 5 turns for context
+          const mapContext = gameHistory.slice(-5);
+          const mapText = await generateAsciiMap(mapContext, language);
+          // Clean up potential markdown code blocks
+          const cleanedMapText = mapText.replace(/```/g, '').trim();
+          setAsciiMapContent(cleanedMapText);
       } catch (err) {
-          console.error("Map generation failed:", err);
+          setAsciiMapContent(t('errorGeneratingMap'));
+          console.error("ASCII Map generation failed:", err);
       } finally {
-          setIsGeneratingMap(false);
+          setIsAsciiMapLoading(false);
       }
-  }, [language]);
+  }, [gameHistory, language, t]);
 
 
   const handleStartGame = useCallback(async (settings: GameSettings) => {
@@ -199,7 +251,6 @@ const App: React.FC = () => {
     setCharacterStatus(null);
     setJournal([]);
     setNpcs([]);
-    setMapImageUrl(null);
     setEventCounter(settings.eventTimer);
     setEventTimerSetting(settings.eventTimer);
     setTurnImageUrl(null);
@@ -218,13 +269,12 @@ const App: React.FC = () => {
       }
       setIsGameStarted(true);
       generateTurnImage(gameText);
-      generateInitialMap(settings.setting);
     } catch (err) {
       setError(err instanceof Error ? `Failed to start game: ${err.message}` : 'An unknown error occurred.');
     } finally {
       setIsLoading(false);
     }
-  }, [generateTurnImage, generateNpcPortrait, generateInitialMap, language]);
+  }, [generateTurnImage, generateNpcPortrait, language]);
   
   const statusCommands = useMemo(() => ({
     ru: ['статус', 'инвентарь', 'здоровье'],
@@ -234,36 +284,108 @@ const App: React.FC = () => {
 
   const handleSendAction = useCallback(async (action: string) => {
     if (!chatSession || !action.trim()) return;
+
     setIsLoading(true);
     setError(null);
-    setGameHistory(prev => [...prev, { type: 'player', content: action }]);
+    
+    const command = action.trim().toLowerCase();
+    const isMetaCommand = statusCommands[language].includes(command);
+
+    let actionToDisplay = action;
+    let actionToSend = action;
+
+    if (isMetaCommand) {
+        actionToSend = language === 'ru'
+            ? `[СИСТЕМНОЕ СООБЩЕНИЕ ДЛЯ GM]
+Это системный запрос на обновление данных персонажа для интерфейса игры. Твой ответ ДОЛЖЕН состоять из ДВУХ частей:
+1.  **Текстовое описание:** Сначала напиши краткий, художественный абзац (2-3 предложения) о состоянии персонажа для игрока.
+2.  **Блок данных (XML):** СРАЗУ ПОСЛЕ текстового описания, без пустых строк или другого текста, добавь блок данных в СТРОГОМ формате XML. Этот блок будет скрыт от игрока и используется только для парсинга.
+
+**ПРИМЕР ПОЛНОГО ОТВЕТА (Текст + XML):**
+Ты чувствуешь себя отдохнувшим, хотя легкая рана на руке все еще ноет. Твои карманы приятно оттягивают несколько полезных вещей.
+<statusdata>
+  <status>
+    <Имя>Иона</Имя>
+    <Здоровье>95/100</Здоровье>
+    <Сила>12</Сила>
+    <Ловкость>14</Ловкость>
+    <Класс_Брони>15</Класс_Брони>
+    <Золото>50</Золото>
+  </status>
+  <inventory>
+    <item name="Лечебное зелье" quantity="2" />
+    <item name="Стальной меч" quantity="1" />
+  </inventory>
+  <effects>
+    <effect name="Легкое ранение" duration="1 час" />
+  </effects>
+</statusdata>`
+            : `[SYSTEM MESSAGE FOR GM]
+This is a system request to update character data for the game interface. Your response MUST have TWO parts:
+1.  **Narrative Description:** First, write a brief, flavorful paragraph (2-3 sentences) about the character's condition for the player.
+2.  **Data Block (XML):** IMMEDIATELY AFTER the narrative text, with no blank lines or other text, add a data block in STRICT XML format. This block will be hidden from the player and is used only for parsing.
+
+**EXAMPLE OF A COMPLETE RESPONSE (Text + XML):**
+You feel well-rested, though the slight wound on your arm still aches. Your pockets feel heavy with a few useful items.
+<statusdata>
+  <status>
+    <Name>Ion</Name>
+    <Health>95/100</Health>
+    <Strength>12</Strength>
+    <Dexterity>14</Dexterity>
+    <Armor_Class>15</Armor_Class>
+    <Gold>50</Gold>
+  </status>
+  <inventory>
+    <item name="Healing Potion" quantity="2" />
+    <item name="Steel Sword" quantity="1" />
+  </inventory>
+  <effects>
+    <effect name="Minor Wound" duration="1 hour" />
+  </effects>
+</statusdata>`;
+        actionToDisplay = action; // Show original command in chat for better UX
+    } else {
+        const newCounter = eventCounter - 1;
+        actionToSend = action + (newCounter <= 0 ? (language === 'ru' 
+            ? "\n\n[СИСТЕМНОЕ СООБЩЕНИЕ: Счетчик случайных событий достиг нуля. Сделай бросок на случайное событие согласно правилам.]"
+            : "\n\n[SYSTEM MESSAGE: The random event counter has reached zero. Make a roll for a random event according to the rules.]") : "");
+        setEventCounter(newCounter <= 0 ? eventTimerSetting : newCounter);
+    }
+
+    setGameHistory(prev => [...prev, { type: 'player', content: actionToDisplay }]);
     setGameHistory(prev => [...prev, { type: 'game', content: '' }]);
     let fullResponseContent = '';
-    const newCounter = eventCounter - 1;
-    let actionToSend = action + (newCounter <= 0 ? (language === 'ru' 
-        ? "\n\n[СИСТЕМНОЕ СООБЩЕНИЕ: Счетчик случайных событий достиг нуля. Сделай бросок на случайное событие согласно правилам.]"
-        : "\n\n[SYSTEM MESSAGE: The random event counter has reached zero. Make a roll for a random event according to the rules.]") : "");
-    setEventCounter(newCounter <= 0 ? eventTimerSetting : newCounter);
 
     try {
       const stream = await sendPlayerAction(chatSession, actionToSend);
       for await (const chunk of stream) {
         fullResponseContent += chunk;
-        setGameHistory(prev => {
-            const latestHistory = [...prev];
-            const lastTurn = latestHistory[latestHistory.length - 1];
-            if (lastTurn?.type === 'game') {
-                latestHistory[latestHistory.length - 1] = {...lastTurn, content: lastTurn.content + chunk };
-            }
-            return latestHistory;
-        });
+        // For meta commands, we wait for the full response to parse it, avoiding UI flicker of the XML block.
+        if (!isMetaCommand) {
+             setGameHistory(prev => {
+                const latestHistory = [...prev];
+                const lastTurn = latestHistory[latestHistory.length - 1];
+                if (lastTurn?.type === 'game') {
+                    latestHistory[latestHistory.length - 1] = {...lastTurn, content: lastTurn.content + chunk };
+                }
+                return latestHistory;
+            });
+        }
       }
-      const command = action.trim().toLowerCase();
-      const isMetaCommand = statusCommands[language].includes(command);
       
       if (isMetaCommand) {
-          const parsedData = parseStatusFromString(fullResponseContent, command);
-          if (parsedData) setCharacterStatus(prev => ({...prev, ...parsedData}));
+          const { humanText, statusData } = parseStatusAndXML(fullResponseContent);
+          if (statusData) {
+              setCharacterStatus(prev => ({...prev, ...statusData}));
+          }
+          // Update history with only the human-readable part
+          setGameHistory(prev => {
+            const updatedHistory = [...prev];
+            updatedHistory[updatedHistory.length-1].content = humanText;
+            return updatedHistory;
+          });
+
       } else {
           const { gameText, journalEntry, newNpcs: turnNpcs } = parseGamedata(fullResponseContent);
           setGameHistory(prev => {
@@ -304,7 +426,7 @@ const App: React.FC = () => {
     if (!chatSession || !isGameStarted) return null;
     try {
       const chatHistory = await chatSession.getHistory();
-      return { gameHistory, characterStatus, eventCounter, chatHistory, eventTimerSetting, language, journal, npcs, mapImageUrl, gameSettings };
+      return { gameHistory, characterStatus, eventCounter, chatHistory, eventTimerSetting, language, journal, npcs, gameSettings };
     } catch (e) {
       setError(t('errorGetDataForSave'));
       console.error(e);
@@ -340,7 +462,7 @@ const App: React.FC = () => {
   };
   
   const applyLoadedState = useCallback((savedState: SaveState) => {
-      const { gameHistory, characterStatus, eventCounter, chatHistory, eventTimerSetting, language: savedLanguage, journal, npcs, mapImageUrl, gameSettings } = savedState;
+      const { gameHistory, characterStatus, eventCounter, chatHistory, eventTimerSetting, language: savedLanguage, journal, npcs, gameSettings } = savedState;
       const chat = recreateChatSession(chatHistory);
       setGameHistory(gameHistory);
       setCharacterStatus(characterStatus);
@@ -349,7 +471,6 @@ const App: React.FC = () => {
       setLanguage(savedLanguage || 'ru');
       setJournal(journal || []);
       setNpcs(npcs || []);
-      setMapImageUrl(mapImageUrl || null);
       setGameSettings(gameSettings || null);
       setChatSession(chat);
       setIsGameStarted(true);
@@ -426,6 +547,11 @@ const App: React.FC = () => {
       }
   }, [characterStatus, gameSettings, language, t]);
 
+  const handleNpcClick = useCallback((npc: Npc) => {
+      setSelectedNpc(npc);
+      setIsNpcModalOpen(true);
+  }, []);
+
   const handleItemAction = (action: string) => {
       if (selectedItem) {
           const command = language === 'ru' ? `${action} ${selectedItem.name}` : `${action} ${selectedItem.name}`;
@@ -485,14 +611,16 @@ const App: React.FC = () => {
                 isGenerating={isGeneratingImage}
                 isGameLoading={isLoading}
                 error={imageGenerationError}
-                onImageClick={() => setIsImageViewerOpen(true)}
+                onImageClick={openImageViewer}
                 onSaveGame={handleSaveGame}
                 onDownloadSave={handleDownloadSave}
                 saveMessage={saveMessage}
                 onContactGM={() => setIsGMContactModalOpen(true)}
                 npcs={npcs}
-                mapImageUrl={mapImageUrl}
-                isGeneratingMap={isGeneratingMap}
+                onNpcClick={handleNpcClick}
+                onShowAsciiMap={handleShowAsciiMap}
+                imageGenerationModel={imageGenerationModel}
+                setImageGenerationModel={setImageGenerationModel}
                 t={t}
               />
             </div>
@@ -502,7 +630,7 @@ const App: React.FC = () => {
       </div>
       <ImageViewerModal 
         isOpen={isImageViewerOpen}
-        imageUrl={turnImageUrl || mapImageUrl}
+        imageUrl={imageToView}
         onClose={() => setIsImageViewerOpen(false)}
         t={t}
       />
@@ -521,6 +649,19 @@ const App: React.FC = () => {
         description={itemDescription}
         isLoading={isItemDescLoading}
         onAction={handleItemAction}
+        t={t}
+      />
+      <NpcDetailModal
+        isOpen={isNpcModalOpen}
+        onClose={() => setIsNpcModalOpen(false)}
+        npc={selectedNpc}
+        t={t}
+      />
+       <AsciiMapModal
+        isOpen={isAsciiMapModalOpen}
+        onClose={() => setIsAsciiMapModalOpen(false)}
+        content={asciiMapContent}
+        isLoading={isAsciiMapLoading}
         t={t}
       />
     </div>
