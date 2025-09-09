@@ -1,10 +1,10 @@
 
-import React, { useState, useCallback, useEffect, useMemo } from 'react';
-import type { GameSettings, GameTurn, CharacterStatus as CharacterStatusType, InventoryItem, SaveState, Npc, ImageModel } from './types';
+import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
+import type { GameSettings, GameTurn, CharacterStatus as CharacterStatusType, InventoryItem, SaveState, Npc, ImageModel, InfoType, InfoItem, BestiaryEntry, GameEngineModel } from './types';
 import type { Language } from './i18n';
 import { useTranslation, translations } from './i18n';
-import { initGameSession, sendPlayerAction, recreateChatSession, generateImage, contactGameMaster, getItemDescription, generateAsciiMap } from './services/geminiService';
-import type { Chat } from '@google/genai';
+import { initGameSession, sendPlayerAction, recreateChatSession, generateImage, contactGameMaster, getItemDescription, generateInfoList, getInfoItemDetails, generateImagePrompt } from './services/geminiService';
+import type { Chat, Content } from '@google/genai';
 import GameSetup from './components/GameSetup';
 import GameWindow from './components/GameWindow';
 import CharacterStatus from './components/CharacterStatus';
@@ -13,11 +13,144 @@ import ImageViewerModal from './components/ImageViewerModal';
 import GMContactModal from './components/GMContactModal';
 import ItemDetailModal from './components/ItemDetailModal';
 import NpcDetailModal from './components/NpcDetailModal';
-import AsciiMapModal from './components/AsciiMapModal';
+import InfoPanelModal from './components/AsciiMapModal'; // Repurposed for the new Info Panel
+import LoadingSpinner from './components/LoadingSpinner';
+
 
 const SAVE_KEY = 'gemini-rpg-savegame';
 const THEME_KEY = 'gemini-rpg-theme';
 const LANGUAGE_KEY = 'gemini-rpg-language';
+
+
+// New InfoDetailModal component defined inside App.tsx to avoid creating new files.
+const InfoDetailModal: React.FC<{
+    isOpen: boolean;
+    onClose: () => void;
+    item: InfoItem | BestiaryEntry | null;
+    isLoading: boolean;
+    t: (key: any) => string;
+}> = ({ isOpen, onClose, item, isLoading, t }) => {
+    if (!isOpen || !item) return null;
+
+    const isBestiary = 'stats' in item;
+
+    return (
+        <div
+            className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in"
+            onClick={onClose}
+        >
+            <style>{`
+                @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+                @keyframes scaleIn { from { transform: scale(0.95); } to { transform: scale(1); } }
+                .animate-fade-in { animation: fadeIn 0.3s ease-out forwards; }
+                .animate-scale-in { animation: scaleIn 0.3s ease-out forwards; }
+            `}</style>
+            <div
+                className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl border border-gray-200 dark:border-gray-700 w-full max-w-lg flex flex-col transition-transform duration-300 transform scale-95 animate-scale-in max-h-[90vh]"
+                onClick={e => e.stopPropagation()}
+            >
+                <header className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
+                    <div>
+                        <h2 className="text-xl font-bold text-cyan-700 dark:text-cyan-400 font-cinzel">{t('infoDetails')}</h2>
+                        <p className="text-gray-600 dark:text-gray-300">{item.name}</p>
+                    </div>
+                    <button onClick={onClose} className="text-gray-400 hover:text-gray-800 dark:hover:text-white text-3xl leading-none" aria-label={t('close')}>&times;</button>
+                </header>
+
+                <main className="p-6 flex-grow overflow-y-auto">
+                    {isLoading ? (
+                        <div className="flex items-center justify-center h-full space-x-2 text-gray-500">
+                            <LoadingSpinner />
+                            <span>{t('loading')}</span>
+                        </div>
+                    ) : (
+                        <div>
+                            <h3 className="text-md font-semibold text-gray-700 dark:text-gray-300 mb-2">{t('description')}</h3>
+                            <p className="text-gray-600 dark:text-gray-400 italic leading-relaxed">{item.description || t('noDescription')}</p>
+                            {isBestiary && item.stats && (
+                                <>
+                                    <h3 className="text-md font-semibold text-gray-700 dark:text-gray-300 mt-4 mb-2">{t('stats')}</h3>
+                                    <p className="text-gray-600 dark:text-gray-400">{item.stats}</p>
+                                </>
+                            )}
+                        </div>
+                    )}
+                </main>
+            </div>
+        </div>
+    );
+};
+
+// New ImagePromptModal component (repurposed from SceneDetailModal)
+const ImagePromptModal: React.FC<{
+    isOpen: boolean;
+    onClose: () => void;
+    promptText: string;
+    isLoading: boolean;
+    t: (key: any) => string;
+}> = ({ isOpen, onClose, promptText, isLoading, t }) => {
+    const [copyButtonText, setCopyButtonText] = useState(t('copyPrompt'));
+    const promptTextAreaRef = useRef<HTMLTextAreaElement>(null);
+
+    useEffect(() => {
+        if (isOpen) {
+            setCopyButtonText(t('copyPrompt')); // Reset on open
+        }
+    }, [isOpen, t]);
+
+    if (!isOpen) return null;
+
+    const handleCopyClick = () => {
+        if (promptTextAreaRef.current) {
+            navigator.clipboard.writeText(promptTextAreaRef.current.value);
+            setCopyButtonText(t('promptCopied'));
+            setTimeout(() => setCopyButtonText(t('copyPrompt')), 2000);
+        }
+    };
+    
+    return (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in" onClick={onClose}>
+            <style>{`
+                @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+                @keyframes scaleIn { from { transform: scale(0.95); } to { transform: scale(1); } }
+                .animate-fade-in { animation: fadeIn 0.3s ease-out forwards; }
+                .animate-scale-in { animation: scaleIn 0.3s ease-out forwards; }
+            `}</style>
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl border border-gray-200 dark:border-gray-700 w-full max-w-3xl h-[85vh] flex flex-col transition-transform duration-300 transform scale-95 animate-scale-in" onClick={e => e.stopPropagation()}>
+                <header className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
+                    <h2 className="text-xl font-bold text-cyan-700 dark:text-cyan-400 font-cinzel">{t('imagePromptTitle')}</h2>
+                    <button onClick={onClose} className="text-gray-400 hover:text-gray-800 dark:hover:text-white text-3xl leading-none" aria-label={t('close')}>&times;</button>
+                </header>
+                <main className="p-4 flex-grow overflow-y-auto flex flex-col">
+                    {isLoading ? (
+                        <div className="flex-grow flex flex-col items-center justify-center text-gray-500 space-y-3">
+                            <LoadingSpinner />
+                            <span>{t('generatingPrompt')}</span>
+                        </div>
+                    ) : (
+                         <textarea
+                            ref={promptTextAreaRef}
+                            value={promptText}
+                            readOnly
+                            className="w-full h-full flex-grow bg-gray-100 dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-md py-2 px-3 text-gray-800 dark:text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-cyan-500 transition resize-none font-mono text-sm"
+                            />
+                    )}
+                </main>
+                <footer className="p-4 border-t border-gray-200 dark:border-gray-700 flex-shrink-0 bg-gray-50 dark:bg-gray-800/50">
+                     <button
+                      type="button"
+                      onClick={handleCopyClick}
+                      disabled={isLoading || !promptText}
+                      className="w-full flex items-center justify-center gap-2 bg-cyan-600 hover:bg-cyan-700 disabled:bg-gray-400 dark:disabled:bg-gray-600 text-white font-bold py-2 px-6 rounded-md transition-colors"
+                    >
+                      {copyButtonText}
+                    </button>
+                </footer>
+            </div>
+        </div>
+    );
+};
+
 
 const parseGamedata = (text: string): { gameText: string; journalEntry: string | null; newNpcs: { name: string; description: string }[] } => {
     const gameDataRegex = /<gamedata>([\s\S]*?)<\/gamedata>/;
@@ -143,18 +276,34 @@ const App: React.FC = () => {
   const [isItemModalOpen, setIsItemModalOpen] = useState(false);
   const [itemDescription, setItemDescription] = useState('');
   const [isItemDescLoading, setIsItemDescLoading] = useState(false);
+  const [gameEngineModel, setGameEngineModel] = useState<GameEngineModel>('gemini-2.5-flash');
+
+  // Info Panel State
+  const [isInfoPanelOpen, setIsInfoPanelOpen] = useState(false);
+  const [surroundings, setSurroundings] = useState<InfoItem[]>([]);
+  const [locations, setLocations] = useState<InfoItem[]>([]);
+  const [bestiary, setBestiary] = useState<BestiaryEntry[]>([]);
+  const [quests, setQuests] = useState<InfoItem[]>([]);
+  const [isInfoLoading, setIsInfoLoading] = useState<Record<InfoType, boolean>>({ surroundings: false, locations: false, bestiary: false, quests: false });
+  const [selectedInfoItem, setSelectedInfoItem] = useState<{item: InfoItem | BestiaryEntry, type: InfoType} | null>(null);
+  const [isInfoDetailModalOpen, setIsInfoDetailModalOpen] = useState(false);
+  const [isInfoDetailLoading, setIsInfoDetailLoading] = useState(false);
+
+  // Image Prompt Modal State (repurposed from Scene Detail)
+  const [isImagePromptModalOpen, setIsImagePromptModalOpen] = useState(false);
+  const [imagePromptText, setImagePromptText] = useState('');
+  const [isImagePromptLoading, setIsImagePromptLoading] = useState(false);
+
+  // FIX: Add missing state for NPC modal
   const [selectedNpc, setSelectedNpc] = useState<Npc | null>(null);
   const [isNpcModalOpen, setIsNpcModalOpen] = useState(false);
-  
-  const [isAsciiMapModalOpen, setIsAsciiMapModalOpen] = useState(false);
-  const [asciiMapContent, setAsciiMapContent] = useState<string | null>(null);
-  const [isAsciiMapLoading, setIsAsciiMapLoading] = useState(false);
 
 
   const [turnImageUrl, setTurnImageUrl] = useState<string | null>(null);
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
   const [imageGenerationError, setImageGenerationError] = useState<string | null>(null);
   const [imageGenerationModel, setImageGenerationModel] = useState<ImageModel>('imagen-4.0-generate-001');
+  const [isSceneImageGenEnabled, setIsSceneImageGenEnabled] = useState(true);
   const [isImageViewerOpen, setIsImageViewerOpen] = useState(false);
   const [imageToView, setImageToView] = useState<string | null>(null);
   const [isGMContactModalOpen, setIsGMContactModalOpen] = useState(false);
@@ -188,8 +337,27 @@ const App: React.FC = () => {
     }
   };
 
+  const handleEngineModelChange = useCallback(async (newModel: GameEngineModel) => {
+    if (newModel === gameEngineModel || !isGameStarted || !chatSession) return;
+
+    const originalModel = gameEngineModel;
+    setGameEngineModel(newModel); // Optimistic UI update
+    setIsLoading(true);
+    try {
+        const currentHistory = await chatSession.getHistory();
+        const newChat = recreateChatSession(currentHistory, newModel);
+        setChatSession(newChat);
+    } catch (e) {
+        setError(t('errorSwitchingModel'));
+        setGameEngineModel(originalModel); // Revert on error
+        console.error(e);
+    } finally {
+        setIsLoading(false);
+    }
+  }, [gameEngineModel, isGameStarted, chatSession, t]);
+
   const generateTurnImage = useCallback(async (gameText: string) => {
-    if (imageGenerationModel === 'none') {
+    if (imageGenerationModel === 'none' || !isSceneImageGenEnabled) {
         setTurnImageUrl(null);
         setImageGenerationError(null);
         return;
@@ -207,16 +375,16 @@ const App: React.FC = () => {
     } finally {
         setIsGeneratingImage(false);
     }
-  }, [t, imageGenerationModel]);
+  }, [t, imageGenerationModel, isSceneImageGenEnabled]);
 
   const generateNpcPortrait = useCallback(async (npcName: string, npcDescription: string) => {
+    if (imageGenerationModel === 'none') return;
     setNpcs(prev => prev.map(n => n.name === npcName ? { ...n, isGeneratingPortrait: true } : n));
     const visualPrompt = t('language') === 'ru'
         ? `Создай портрет персонажа в стиле фэнтези-арта для RPG. Персонаж: ${npcName}. Описание: ${npcDescription}. Стиль: реалистичный, детальный, фокус на лице и характере.`
         : `Create a character portrait in a fantasy art style for an RPG. Character: ${npcName}. Description: ${npcDescription}. Style: realistic, detailed, focus on the face and character.`;
     try {
-        const modelForNpc = imageGenerationModel === 'none' ? 'imagen-4.0-generate-001' : imageGenerationModel;
-        const imageUrl = await generateImage(visualPrompt, modelForNpc);
+        const imageUrl = await generateImage(visualPrompt, imageGenerationModel);
         setNpcs(prev => prev.map(n => n.name === npcName ? { ...n, portraitUrl: imageUrl, isGeneratingPortrait: false } : n));
     } catch (err) {
         console.error(`Failed to generate portrait for ${npcName}:`, err);
@@ -224,24 +392,71 @@ const App: React.FC = () => {
     }
   }, [t, imageGenerationModel]);
 
-  const handleShowAsciiMap = useCallback(async () => {
-      setIsAsciiMapModalOpen(true);
-      setIsAsciiMapLoading(true);
-      setAsciiMapContent(null);
+  const handleUpdateInfo = useCallback(async (type: InfoType) => {
+      setIsInfoLoading(prev => ({ ...prev, [type]: true }));
       try {
-          // Provide last 5 turns for context
-          const mapContext = gameHistory.slice(-5);
-          const mapText = await generateAsciiMap(mapContext, language);
-          // Clean up potential markdown code blocks
-          const cleanedMapText = mapText.replace(/```/g, '').trim();
-          setAsciiMapContent(cleanedMapText);
+          const stateMap = {
+              surroundings: surroundings,
+              locations: locations,
+              bestiary: bestiary,
+              quests: quests,
+          };
+          const setStateMap = {
+              surroundings: setSurroundings,
+              locations: setLocations,
+              bestiary: setBestiary,
+              quests: setQuests,
+          };
+
+          const existingItems = stateMap[type];
+          const newItems = await generateInfoList(type, gameHistory, language, existingItems, gameEngineModel);
+          
+          if (newItems.length > 0) {
+              const setState = setStateMap[type] as React.Dispatch<React.SetStateAction<(InfoItem | BestiaryEntry)[]>>;
+              setState(prev => {
+                  const existingIds = new Set(prev.map(i => i.id));
+                  const trulyNewItems = newItems.filter(newItem => !existingIds.has(newItem.id));
+                  return [...prev, ...trulyNewItems];
+              });
+          }
       } catch (err) {
-          setAsciiMapContent(t('errorGeneratingMap'));
-          console.error("ASCII Map generation failed:", err);
+          const errorMessage = err instanceof Error ? err.message : t('unknownError');
+          setError(`Info Update Error: ${errorMessage}`);
       } finally {
-          setIsAsciiMapLoading(false);
+          setIsInfoLoading(prev => ({ ...prev, [type]: false }));
       }
-  }, [gameHistory, language, t]);
+  }, [gameHistory, language, surroundings, locations, bestiary, quests, t, gameEngineModel]);
+
+  const handleInfoItemClick = useCallback(async (item: InfoItem | BestiaryEntry, type: InfoType) => {
+    setSelectedInfoItem({ item, type });
+    setIsInfoDetailModalOpen(true);
+
+    if (item.description) {
+        return;
+    }
+    
+    setIsInfoDetailLoading(true);
+    try {
+      const details = await getInfoItemDetails(item.name, type, gameHistory, language, gameEngineModel);
+      const workingItem = { ...item, description: details.description };
+
+      if ('stats' in workingItem && 'stats' in details) {
+          (workingItem as BestiaryEntry).stats = details.stats;
+      }
+      
+      const setStateMap = { surroundings: setSurroundings, locations: setLocations, bestiary: setBestiary, quests: setQuests };
+      const setState = setStateMap[type] as React.Dispatch<React.SetStateAction<(InfoItem | BestiaryEntry)[]>>;
+      
+      setState(prev => prev.map(i => i.id === workingItem.id ? workingItem : i));
+      setSelectedInfoItem({ item: workingItem, type });
+
+    } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : t('unknownError');
+        setError(`Info Detail Error: ${errorMessage}`);
+    } finally {
+        setIsInfoDetailLoading(false);
+    }
+  }, [gameHistory, language, t, gameEngineModel]);
 
 
   const handleStartGame = useCallback(async (settings: GameSettings) => {
@@ -251,10 +466,16 @@ const App: React.FC = () => {
     setCharacterStatus(null);
     setJournal([]);
     setNpcs([]);
+    setSurroundings([]);
+    setLocations([]);
+    setBestiary([]);
+    setQuests([]);
     setEventCounter(settings.eventTimer);
     setEventTimerSetting(settings.eventTimer);
+    setGameEngineModel(settings.gameEngineModel);
     setTurnImageUrl(null);
     setImageGenerationError(null);
+    setIsSceneImageGenEnabled(true);
     setGameSettings(settings);
     try {
       const { chat, initialResponse } = await initGameSession(settings, language);
@@ -358,6 +579,7 @@ You feel well-rested, though the slight wound on your arm still aches. Your pock
     let fullResponseContent = '';
 
     try {
+      setSurroundings([]); // Invalidate surroundings cache on new turn
       const stream = await sendPlayerAction(chatSession, actionToSend);
       for await (const chunk of stream) {
         fullResponseContent += chunk;
@@ -416,17 +638,27 @@ You feel well-rested, though the slight wound on your arm still aches. Your pock
     }
   }, [chatSession, gameHistory, eventCounter, eventTimerSetting, generateTurnImage, language, statusCommands, npcs, generateNpcPortrait]);
   
-  const handleRestart = useCallback(() => {
-    if (window.confirm(t('restartConfirmation'))) {
-        window.location.reload();
-    }
-  }, [t]);
+    const handleGenerateImagePrompt = useCallback(async () => {
+        setIsImagePromptModalOpen(true);
+        setIsImagePromptLoading(true);
+        setImagePromptText('');
+
+        try {
+            const prompt = await generateImagePrompt(gameHistory, language);
+            setImagePromptText(prompt);
+        } catch (err) {
+            const errorMessage = err instanceof Error ? `Error: ${err.message}` : t('unknownError');
+            setImagePromptText(errorMessage);
+        } finally {
+            setIsImagePromptLoading(false);
+        }
+    }, [gameHistory, language, t]);
 
   const getSaveState = async (): Promise<SaveState | null> => {
     if (!chatSession || !isGameStarted) return null;
     try {
       const chatHistory = await chatSession.getHistory();
-      return { gameHistory, characterStatus, eventCounter, chatHistory, eventTimerSetting, language, journal, npcs, gameSettings };
+      return { gameHistory, characterStatus, eventCounter, chatHistory, eventTimerSetting, language, journal, npcs, gameSettings, surroundings, locations, bestiary, quests, gameEngineModel, isSceneImageGenEnabled };
     } catch (e) {
       setError(t('errorGetDataForSave'));
       console.error(e);
@@ -462,8 +694,9 @@ You feel well-rested, though the slight wound on your arm still aches. Your pock
   };
   
   const applyLoadedState = useCallback((savedState: SaveState) => {
-      const { gameHistory, characterStatus, eventCounter, chatHistory, eventTimerSetting, language: savedLanguage, journal, npcs, gameSettings } = savedState;
-      const chat = recreateChatSession(chatHistory);
+      const { gameHistory, characterStatus, eventCounter, chatHistory, eventTimerSetting, language: savedLanguage, journal, npcs, gameSettings, surroundings, locations, bestiary, quests, gameEngineModel: savedEngineModel, isSceneImageGenEnabled: savedIsSceneImageGenEnabled } = savedState;
+      const modelToLoad = savedEngineModel || 'gemini-2.5-flash';
+      const chat = recreateChatSession(chatHistory, modelToLoad);
       setGameHistory(gameHistory);
       setCharacterStatus(characterStatus);
       setEventCounter(eventCounter);
@@ -472,6 +705,12 @@ You feel well-rested, though the slight wound on your arm still aches. Your pock
       setJournal(journal || []);
       setNpcs(npcs || []);
       setGameSettings(gameSettings || null);
+      setGameEngineModel(modelToLoad);
+      setIsSceneImageGenEnabled(savedIsSceneImageGenEnabled ?? true);
+      setSurroundings(surroundings || []);
+      setLocations(locations || []);
+      setBestiary(bestiary || []);
+      setQuests(quests || []);
       setChatSession(chat);
       setIsGameStarted(true);
       setError(null);
@@ -506,14 +745,14 @@ You feel well-rested, though the slight wound on your arm still aches. Your pock
     }
   }, [applyLoadedState, t]);
 
-  const handleContactGM = useCallback(async (message: string) => {
+  const handleContactGM = useCallback(async (message: string, mode: 'gm' | 'expert') => {
       if (!chatSession) { setError(t('errorGMSessionInactive')); return; }
       setIsGMContactLoading(true);
       setGmContactHistory(prev => [...prev, { type: 'user', content: message }]);
       setGmContactHistory(prev => [...prev, { type: 'gm', content: '' }]);
       try {
         const gameApiHistory = await chatSession.getHistory();
-        const stream = await contactGameMaster(gameApiHistory, message, language);
+        const stream = await contactGameMaster(gameApiHistory, message, language, gameEngineModel, mode);
         for await (const chunk of stream) {
           setGmContactHistory(prev => {
             const latestHistory = [...prev];
@@ -530,7 +769,7 @@ You feel well-rested, though the slight wound on your arm still aches. Your pock
       } finally {
         setIsGMContactLoading(false);
       }
-  }, [chatSession, language, t]);
+  }, [chatSession, language, t, gameEngineModel]);
 
   const handleItemClick = useCallback(async (item: InventoryItem) => {
       setSelectedItem(item);
@@ -538,14 +777,14 @@ You feel well-rested, though the slight wound on your arm still aches. Your pock
       setIsItemDescLoading(true);
       setItemDescription('');
       try {
-          const desc = await getItemDescription(item.name, characterStatus, gameSettings, language);
+          const desc = await getItemDescription(item.name, characterStatus, gameSettings, language, gameEngineModel);
           setItemDescription(desc);
       } catch (err) {
           setItemDescription(t('errorGetItemDesc'));
       } finally {
           setIsItemDescLoading(false);
       }
-  }, [characterStatus, gameSettings, language, t]);
+  }, [characterStatus, gameSettings, language, t, gameEngineModel]);
 
   const handleNpcClick = useCallback((npc: Npc) => {
       setSelectedNpc(npc);
@@ -564,11 +803,33 @@ You feel well-rested, though the slight wound on your arm still aches. Your pock
   return (
     <div className="min-h-screen bg-white dark:bg-gray-900 text-gray-800 dark:text-gray-200 font-lora flex flex-col items-center p-4 transition-colors duration-300">
       <div className="w-full max-w-7xl flex flex-col h-screen">
-        <header className="text-center py-4 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
-          <h1 className="text-2xl md:text-4xl font-bold text-cyan-600 dark:text-cyan-400 tracking-wider font-cinzel">
-            {t('appTitle')}
-          </h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{t('appSubtitle')}</p>
+        <header className="text-center py-4 border-b border-gray-200 dark:border-gray-700 flex-shrink-0 flex items-center justify-center relative">
+          <div className="flex-grow">
+            <h1 className="text-2xl md:text-4xl font-bold text-cyan-600 dark:text-cyan-400 tracking-wider font-cinzel">
+              {t('appTitle')}
+            </h1>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{t('appSubtitle')}</p>
+          </div>
+          {isGameStarted && (
+            <div className="absolute top-1/2 -translate-y-1/2 right-4 flex items-center gap-1 bg-gray-200 dark:bg-gray-800 p-1 rounded-lg shadow-md">
+                <button
+                    onClick={() => handleEngineModelChange('gemini-2.5-flash')}
+                    disabled={isLoading}
+                    className={`px-3 py-1 text-sm rounded-md transition-colors ${gameEngineModel === 'gemini-2.5-flash' ? 'bg-cyan-600 text-white' : 'bg-transparent text-gray-600 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-700'}`}
+                    title={t('fast')}
+                >
+                    ⚡️
+                </button>
+                <button
+                    onClick={() => handleEngineModelChange('gemini-2.5-pro')}
+                    disabled={isLoading}
+                    className={`px-3 py-1 text-sm rounded-md transition-colors ${gameEngineModel === 'gemini-2.5-pro' ? 'bg-purple-600 text-white' : 'bg-transparent text-gray-600 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-700'}`}
+                    title={t('quality')}
+                >
+                    💎
+                </button>
+            </div>
+          )}
         </header>
         <main className="flex-grow flex flex-col py-4 min-h-0">
           {!isGameStarted ? (
@@ -583,6 +844,8 @@ You feel well-rested, though the slight wound on your arm still aches. Your pock
                 setLanguage={setLanguage}
                 theme={theme}
                 setTheme={setTheme}
+                gameEngineModel={gameEngineModel}
+                setGameEngineModel={setGameEngineModel}
                 t={t}
               />
             </div>
@@ -592,7 +855,6 @@ You feel well-rested, though the slight wound on your arm still aches. Your pock
                 status={characterStatus} 
                 onUpdate={() => handleSendAction(language === 'ru' ? 'статус' : 'status')}
                 isLoading={isLoading}
-                onRestart={handleRestart}
                 journal={journal}
                 onItemClick={handleItemClick}
                 t={t}
@@ -603,6 +865,7 @@ You feel well-rested, though the slight wound on your arm still aches. Your pock
                   onSendAction={handleSendAction}
                   isLoading={isLoading}
                   eventCounter={eventCounter}
+                  onOpenImagePrompt={handleGenerateImagePrompt}
                   t={t}
                 />
               </div>
@@ -618,9 +881,11 @@ You feel well-rested, though the slight wound on your arm still aches. Your pock
                 onContactGM={() => setIsGMContactModalOpen(true)}
                 npcs={npcs}
                 onNpcClick={handleNpcClick}
-                onShowAsciiMap={handleShowAsciiMap}
+                onShowInfoPanel={() => setIsInfoPanelOpen(true)}
                 imageGenerationModel={imageGenerationModel}
                 setImageGenerationModel={setImageGenerationModel}
+                isSceneImageGenEnabled={isSceneImageGenEnabled}
+                setIsSceneImageGenEnabled={setIsSceneImageGenEnabled}
                 t={t}
               />
             </div>
@@ -640,6 +905,7 @@ You feel well-rested, though the slight wound on your arm still aches. Your pock
         history={gmContactHistory}
         isLoading={isGMContactLoading}
         onSendMessage={handleContactGM}
+        isLearningModeActive={!!gameSettings?.learningTopic}
         t={t}
       />
        <ItemDetailModal
@@ -657,11 +923,33 @@ You feel well-rested, though the slight wound on your arm still aches. Your pock
         npc={selectedNpc}
         t={t}
       />
-       <AsciiMapModal
-        isOpen={isAsciiMapModalOpen}
-        onClose={() => setIsAsciiMapModalOpen(false)}
-        content={asciiMapContent}
-        isLoading={isAsciiMapLoading}
+      <InfoPanelModal
+        isOpen={isInfoPanelOpen}
+        onClose={() => setIsInfoPanelOpen(false)}
+        surroundings={surroundings}
+        locations={locations}
+        bestiary={bestiary}
+        quests={quests}
+        isLoading={isInfoLoading}
+        onUpdate={handleUpdateInfo}
+        onItemClick={handleInfoItemClick}
+        t={t}
+      />
+      <InfoDetailModal
+        isOpen={isInfoDetailModalOpen}
+        onClose={() => {
+            setIsInfoDetailModalOpen(false);
+            setSelectedInfoItem(null);
+        }}
+        item={selectedInfoItem?.item || null}
+        isLoading={isInfoDetailLoading}
+        t={t}
+      />
+      <ImagePromptModal
+        isOpen={isImagePromptModalOpen}
+        onClose={() => setIsImagePromptModalOpen(false)}
+        promptText={imagePromptText}
+        isLoading={isImagePromptLoading}
         t={t}
       />
     </div>

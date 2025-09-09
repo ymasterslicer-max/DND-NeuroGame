@@ -15,9 +15,11 @@ interface ImageGenerationPanelProps {
   onContactGM: () => void;
   npcs: Npc[];
   onNpcClick: (npc: Npc) => void;
-  onShowAsciiMap: () => void;
+  onShowInfoPanel: () => void;
   imageGenerationModel: ImageModel;
   setImageGenerationModel: (model: ImageModel) => void;
+  isSceneImageGenEnabled: boolean;
+  setIsSceneImageGenEnabled: (enabled: boolean) => void;
   t: (key: any) => string;
 }
 
@@ -33,9 +35,11 @@ const ImageGenerationPanel: React.FC<ImageGenerationPanelProps> = ({
   onContactGM,
   npcs,
   onNpcClick,
-  onShowAsciiMap,
+  onShowInfoPanel,
   imageGenerationModel,
   setImageGenerationModel,
+  isSceneImageGenEnabled,
+  setIsSceneImageGenEnabled,
   t 
 }) => {
   const [activeTab, setActiveTab] = useState<'scene' | 'npcs'>('scene');
@@ -55,6 +59,23 @@ const ImageGenerationPanel: React.FC<ImageGenerationPanelProps> = ({
   
   return (
     <aside className="w-80 flex-shrink-0 bg-gray-50 dark:bg-gray-800/50 p-4 rounded-lg border border-gray-200 dark:border-gray-700 hidden lg:flex flex-col max-h-full transition-colors duration-300">
+      <div className="mb-4">
+        <label htmlFor="image-model-select" className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+            {t('imageModelLabel')}
+        </label>
+        <select
+            id="image-model-select"
+            value={imageGenerationModel}
+            onChange={(e) => setImageGenerationModel(e.target.value as ImageModel)}
+            disabled={isGenerating || isGameLoading}
+            className="w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-md py-1.5 px-2 text-sm text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 transition disabled:bg-gray-200 dark:disabled:bg-gray-800 disabled:cursor-not-allowed"
+        >
+            <option value="imagen-4.0-generate-001">{t('imagen4')}</option>
+            <option value="gemini-2.5-flash-image-preview">{t('geminiFlashImage')}</option>
+            <option value="none">{t('imageModelNone')}</option>
+        </select>
+      </div>
+      
       <div className="flex w-full bg-gray-100 dark:bg-gray-900 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700 mb-4">
           <TabButton tabId="scene">{t('scene')}</TabButton>
           <div className="w-px bg-gray-200 dark:bg-gray-700"></div>
@@ -64,21 +85,18 @@ const ImageGenerationPanel: React.FC<ImageGenerationPanelProps> = ({
       <div className="flex-grow overflow-y-auto min-h-0">
         {activeTab === 'scene' && (
           <div className="space-y-3">
-            <div>
-                <label htmlFor="image-model-select" className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    {t('imageModelLabel')}
+             <div className="flex justify-between items-center bg-gray-100 dark:bg-gray-900/50 p-2 rounded-md">
+                <label htmlFor="scene-gen-toggle" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    {t('sceneImageGeneration')}
                 </label>
-                <select
-                    id="image-model-select"
-                    value={imageGenerationModel}
-                    onChange={(e) => setImageGenerationModel(e.target.value as ImageModel)}
-                    disabled={isGenerating || isGameLoading}
-                    className="w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-md py-1.5 px-2 text-sm text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 transition disabled:bg-gray-200 dark:disabled:bg-gray-800 disabled:cursor-not-allowed"
+                <button
+                    id="scene-gen-toggle"
+                    onClick={() => setIsSceneImageGenEnabled(!isSceneImageGenEnabled)}
+                    disabled={isGameLoading}
+                    className={`relative inline-flex items-center h-6 rounded-full w-11 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 dark:focus:ring-offset-gray-800 disabled:cursor-not-allowed disabled:opacity-50 ${isSceneImageGenEnabled ? 'bg-cyan-600' : 'bg-gray-300 dark:bg-gray-600'}`}
                 >
-                    <option value="imagen-4.0-generate-001">{t('imagen4')}</option>
-                    <option value="gemini-2.5-flash-image-preview">{t('geminiFlashImage')}</option>
-                    <option value="none">{t('imageModelNone')}</option>
-                </select>
+                    <span className={`inline-block w-4 h-4 transform bg-white rounded-full transition-transform ${isSceneImageGenEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
+                </button>
             </div>
             <div className="w-full aspect-square bg-gray-100 dark:bg-gray-900/50 rounded-md flex items-center justify-center border border-gray-200 dark:border-gray-700 overflow-hidden relative group">
               {isGenerating && (
@@ -130,15 +148,14 @@ const ImageGenerationPanel: React.FC<ImageGenerationPanelProps> = ({
         )}
         <button
             type="button"
-            onClick={onShowAsciiMap}
+            onClick={onShowInfoPanel}
             disabled={isGameLoading}
             className="w-full flex justify-center items-center gap-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 disabled:bg-gray-400 dark:disabled:bg-gray-800 disabled:cursor-not-allowed text-gray-800 dark:text-white font-semibold py-2 px-4 rounded-md transition-colors"
         >
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM4.332 8.027a6.012 6.012 0 011.527-2.119l.002.002c.07.07.158.14.24.206.082.065.17.12.25.167.08.046.162.08.24.102l.002.001c.08.02.16.03.24.032l.002.001c.08.004.16.004.24.002l.002-.001a1 1 0 01.992.992l-.001.002c-.002.08-.002.16-.004.24l-.001.002c-.002.08-.012.16-.032.24l-.001.002c-.022.08-.056.16-.102.24a5.04 5.04 0 01-.167.25c-.066.08-.13.168-.206.24l-.002.002a6.012 6.012 0 01-2.119 1.527c.23.68.64 1.28 1.14 1.78l.002.002c.07.07.158.14.24.206.082.065.17.12.25.167.08.046.162.08.24.102l.002.001c.08.02.16.03.24.032l.002.001c.08.004.16.004.24.002l.002-.001a1 1 0 11-.004 2.004l-.002-.001c-.08-.002-.16-.002-.24-.004l-.002-.001c-.08-.002-.16-.012-.24-.032l-.002-.001c-.08-.022-.16-.056-.24-.102a5.04 5.04 0 01-.25-.167c-.08-.066-.168-.13-.24-.206l-.002-.002a6.012 6.012 0 01-1.78-1.14c-.68.23-1.28.64-1.78 1.14l-.002.002c-.07.07-.14.158-.206.24-.065.082-.12.17-.167.25-.046.08-.08.162-.102.24l-.001.002c-.02.08-.03.16-.032.24l-.001.002c-.004.08-.004.16-.002.24l.001.002a1 1 0 11-2.004-.004l.001-.002c.002-.08.002-.16.004-.24l.001-.002c.002-.08.012-.16.032-.24l.001-.002c.022-.08.056-.16.102-.24.047-.08.102-.167.167-.25.065-.082.13-.158.206-.24l.002-.002a6.012 6.012 0 011.14-1.78c-.23-.68-.64-1.28-1.14-1.78l-.002-.002a5.04 5.04 0 01-.206-.24c-.082-.065-.17-.12-.25-.167-.046-.08-.08-.162-.102-.24l-.002-.001c-.02-.08-.03-.16-.032-.24l-.002-.001c-.004-.08-.004-.16-.002-.24l.001-.002a1 1 0 011.992-.004l.001.002zM10 6a4 4 0 100 8 4 4 0 000-8z" clipRule="evenodd" />
-                <path d="M10 11a1 1 0 100-2 1 1 0 000 2z" />
+              <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
             </svg>
-            <span>{t('showAsciiMap')}</span>
+            <span>{t('info')}</span>
         </button>
 
         <div className="flex rounded-md shadow-sm w-full">

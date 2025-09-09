@@ -9,14 +9,16 @@ interface GMContactHistoryItem {
 interface GMContactModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSendMessage: (message: string) => void;
+  onSendMessage: (message: string, mode: 'gm' | 'expert') => void;
   history: GMContactHistoryItem[];
   isLoading: boolean;
+  isLearningModeActive: boolean;
   t: (key: any) => string;
 }
 
-const GMContactModal: React.FC<GMContactModalProps> = ({ isOpen, onClose, onSendMessage, history, isLoading, t }) => {
+const GMContactModal: React.FC<GMContactModalProps> = ({ isOpen, onClose, onSendMessage, history, isLoading, isLearningModeActive, t }) => {
   const [input, setInput] = useState('');
+  const [mode, setMode] = useState<'gm' | 'expert'>('gm');
   const historyEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -32,13 +34,14 @@ const GMContactModal: React.FC<GMContactModalProps> = ({ isOpen, onClose, onSend
   useEffect(() => {
       if (!isOpen) {
           setInput(''); // Clear input when modal closes
+          setMode('gm'); // Reset to default mode
       }
   }, [isOpen]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (input.trim() && !isLoading) {
-      onSendMessage(input);
+      onSendMessage(input, mode);
       setInput('');
     }
   };
@@ -67,7 +70,25 @@ const GMContactModal: React.FC<GMContactModalProps> = ({ isOpen, onClose, onSend
         onClick={e => e.stopPropagation()}
       >
         <header className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
-          <h2 className="text-xl font-bold text-cyan-700 dark:text-cyan-400 font-cinzel">{t('contactGM')}</h2>
+          <div className="flex items-center gap-4">
+            <h2 className="text-xl font-bold text-cyan-700 dark:text-cyan-400 font-cinzel">{t('contactGM')}</h2>
+            {isLearningModeActive && (
+              <div className="flex bg-gray-200 dark:bg-gray-900 rounded-lg p-1 space-x-1">
+                <button 
+                  onClick={() => setMode('gm')}
+                  className={`px-3 py-1 text-xs font-semibold rounded-md transition-colors ${mode === 'gm' ? 'bg-cyan-600 text-white shadow' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-700'}`}
+                >
+                  {t('contactGM')}
+                </button>
+                <button 
+                  onClick={() => setMode('expert')}
+                  className={`px-3 py-1 text-xs font-semibold rounded-md transition-colors ${mode === 'expert' ? 'bg-purple-600 text-white shadow' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-700'}`}
+                >
+                  {t('expert')}
+                </button>
+              </div>
+            )}
+          </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-800 dark:hover:text-white text-3xl leading-none" aria-label={t('close')}>&times;</button>
         </header>
         

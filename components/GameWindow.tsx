@@ -7,17 +7,13 @@ interface GameWindowProps {
   onSendAction: (action: string) => void;
   isLoading: boolean;
   eventCounter: number;
+  onOpenImagePrompt: () => void;
   t: (key: any) => string;
 }
 
-const GameWindow: React.FC<GameWindowProps> = ({ history, onSendAction, isLoading, eventCounter, t }) => {
+const GameWindow: React.FC<GameWindowProps> = ({ history, onSendAction, isLoading, eventCounter, onOpenImagePrompt, t }) => {
   const [input, setInput] = useState('');
   const historyEndRef = useRef<HTMLDivElement>(null);
-  
-  const DESCRIBE_PROMPT = t('language') === 'Русский' 
-    ? "Опиши красочно и во всех деталях текущую обставновку в игре. Не жалей токенов. Сделай это в формате подробнейшего промта для нейросети которая генерирует картинки"
-    : "Describe the current game setting in vivid and rich detail. Don't spare any tokens. Do it in the format of a highly detailed prompt for an image-generating neural network";
-
 
   const scrollToBottom = () => {
     historyEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -78,11 +74,11 @@ const GameWindow: React.FC<GameWindowProps> = ({ history, onSendAction, isLoadin
            </button>
            <button
              type="button"
-             onClick={() => onSendAction(DESCRIBE_PROMPT)}
+             onClick={onOpenImagePrompt}
              disabled={isLoading}
              className="bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 disabled:bg-gray-400 dark:disabled:bg-gray-600 disabled:cursor-not-allowed text-gray-800 dark:text-white font-bold py-2 px-4 rounded-md transition-colors text-sm"
            >
-             {t('describeInDetail')}
+             {t('imagePrompt')}
            </button>
         </div>
         <form onSubmit={handleSubmit} className="flex items-center space-x-2">

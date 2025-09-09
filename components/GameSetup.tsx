@@ -1,8 +1,8 @@
 import React, { useState, useRef, useMemo } from 'react';
-import type { GameSettings } from '../types';
+import type { GameSettings, GameEngineModel } from '../types';
 import { GameDifficulty } from '../types';
 import LoadingSpinner from './LoadingSpinner';
-import { generateEnhancedSetting, generateCharacter, summarizeSettingFromFile, generateRandomIdea } from '../services/geminiService';
+import { generateEnhancedSetting, generateCharacter, summarizeSettingFromFile, generateRandomIdea, generateAuthorStyle, generateLearningPlan } from '../services/geminiService';
 import type { Language } from '../i18n';
 import { styles } from '../styles';
 import type { AuthorStyle } from '../styles';
@@ -19,6 +19,8 @@ interface GameSetupProps {
   theme: 'light' | 'dark';
   setTheme: (theme: 'light' | 'dark') => void;
   t: (key: any) => string;
+  gameEngineModel: GameEngineModel;
+  setGameEngineModel: (model: GameEngineModel) => void;
 }
 
 const SparklesIcon = () => (
@@ -26,6 +28,189 @@ const SparklesIcon = () => (
       <path fillRule="evenodd" d="M5 2a1 1 0 011 1v1h1a1 1 0 010 2H6v1a1 1 0 01-2 0V6H3a1 1 0 010-2h1V3a1 1 0 011-1zm0 10a1 1 0 011 1v1h1a1 1 0 110 2H6v1a1 1 0 11-2 0v-1H3a1 1 0 110-2h1v-1a1 1 0 011-1zM12 2a1 1 0 01.967.744L14.146 7.2l4.485 1.121a1 1 0 01.547 1.621l-3.238 3.524 1.183 4.876a1 1 0 01-1.447 1.057L12 16.798l-4.225 2.599a1 1 0 01-1.447-1.057l1.183-4.876-3.238-3.524a1 1 0 01.547-1.621L6.854 7.2 8.033 2.744A1 1 0 019 2h3z" clipRule="evenodd" />
     </svg>
 );
+
+
+// Learning Mode Modal Component
+const LearningModeModal: React.FC<{
+    isOpen: boolean;
+    onClose: () => void;
+    onAccept: (topic: string, plan: string) => void;
+    language: Language;
+    t: (key: any) => string;
+    setting: string;
+    description: string;
+}> = ({ isOpen, onClose, onAccept, language, t, setting, description }) => {
+    const [topic, setTopic] = useState('');
+    const [generatedPlan, setGeneratedPlan] = useState('');
+    const [isLoading, setIsLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    const handleGenerate = async () => {
+        if (!topic.trim()) return;
+        setIsLoading(true);
+        setError(null);
+        setGeneratedPlan('');
+        try {
+            const plan = await generateLearningPlan(topic, language, setting, description);
+            setGeneratedPlan(plan);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : t('unknownError'));
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const handleAccept = () => {
+        onAccept(topic, generatedPlan);
+        onClose();
+    };
+
+    if (!isOpen) return null;
+
+    return (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in" onClick={onClose}>
+            <style>{`
+                @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+                @keyframes scaleIn { from { transform: scale(0.95); } to { transform: scale(1); } }
+                .animate-fade-in { animation: fadeIn 0.3s ease-out forwards; }
+                .animate-scale-in { animation: scaleIn 0.3s ease-out forwards; }
+            `}</style>
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl border border-gray-200 dark:border-gray-700 w-full max-w-2xl h-[85vh] flex flex-col transition-transform duration-300 transform scale-95 animate-scale-in" onClick={e => e.stopPropagation()}>
+                <header className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
+                    <h2 className="text-xl font-bold text-cyan-700 dark:text-cyan-400 font-cinzel">{t('generateLearningPlanTitle')}</h2>
+                    <button onClick={onClose} className="text-gray-400 hover:text-gray-800 dark:hover:text-white text-3xl leading-none" aria-label={t('close')}>&times;</button>
+                </header>
+                <div className="p-4 flex-shrink-0 border-b border-gray-200 dark:border-gray-700 space-y-2">
+                    <label htmlFor="learning-topic" className="block text-sm font-medium text-gray-700 dark:text-gray-300">{t('learningTopicLabel')}</label>
+                    <div className="flex gap-2">
+                        <input
+                            id="learning-topic"
+                            type="text"
+                            value={topic}
+                            onChange={e => setTopic(e.target.value)}
+                            placeholder={t('learningTopicPlaceholder')}
+                            className="flex-grow w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-md py-2 px-3 text-gray-800 dark:text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-cyan-500 transition"
+                            disabled={isLoading}
+                        />
+                        <button onClick={handleGenerate} disabled={isLoading || !topic.trim()} className="flex items-center justify-center gap-2 bg-cyan-600 hover:bg-cyan-700 disabled:bg-gray-400 dark:disabled:bg-gray-600 text-white font-bold py-2 px-6 rounded-md transition-colors">
+                            {isLoading ? <LoadingSpinner /> : t('generate')}
+                        </button>
+                    </div>
+                </div>
+                <main className="p-4 flex-grow overflow-y-auto">
+                    {error && <div className="text-sm text-red-700 dark:text-red-400 bg-red-100 dark:bg-red-900/50 border border-red-300 dark:border-red-700 p-3 rounded-md mb-4">{error}</div>}
+                    <textarea
+                        value={generatedPlan}
+                        readOnly
+                        className="w-full h-full bg-gray-100 dark:bg-gray-900 border-0 rounded-md py-2 px-3 text-gray-800 dark:text-gray-200 focus:outline-none resize-none font-mono text-sm"
+                        placeholder={isLoading ? '' : 'Generated learning plan will appear here...'}
+                    />
+                </main>
+                <footer className="p-4 border-t border-gray-200 dark:border-gray-700 flex-shrink-0 bg-gray-50 dark:bg-gray-800/50">
+                    <button
+                        onClick={handleAccept}
+                        disabled={isLoading || !generatedPlan}
+                        className="w-full flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 dark:disabled:bg-gray-600 text-white font-bold py-2 px-6 rounded-md transition-colors"
+                    >
+                        {t('accept')}
+                    </button>
+                </footer>
+            </div>
+        </div>
+    );
+};
+
+
+// Custom Author Modal Component
+const CustomAuthorModal: React.FC<{
+    isOpen: boolean;
+    onClose: () => void;
+    onAccept: (authorName: string, prompt: string) => void;
+    language: Language;
+    t: (key: any) => string;
+    setting: string;
+    description: string;
+}> = ({ isOpen, onClose, onAccept, language, t, setting, description }) => {
+    const [authorName, setAuthorName] = useState('');
+    const [generatedPrompt, setGeneratedPrompt] = useState('');
+    const [isLoading, setIsLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    const handleGenerate = async () => {
+        if (!authorName.trim()) return;
+        setIsLoading(true);
+        setError(null);
+        setGeneratedPrompt('');
+        try {
+            const prompt = await generateAuthorStyle(authorName, language, setting, description);
+            setGeneratedPrompt(prompt);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : t('unknownError'));
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const handleAccept = () => {
+        onAccept(authorName, generatedPrompt);
+        onClose();
+    };
+    
+    if (!isOpen) return null;
+
+    return (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in" onClick={onClose}>
+             <style>{`
+                @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+                @keyframes scaleIn { from { transform: scale(0.95); } to { transform: scale(1); } }
+                .animate-fade-in { animation: fadeIn 0.3s ease-out forwards; }
+                .animate-scale-in { animation: scaleIn 0.3s ease-out forwards; }
+            `}</style>
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl border border-gray-200 dark:border-gray-700 w-full max-w-2xl h-[85vh] flex flex-col transition-transform duration-300 transform scale-95 animate-scale-in" onClick={e => e.stopPropagation()}>
+                <header className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
+                    <h2 className="text-xl font-bold text-cyan-700 dark:text-cyan-400 font-cinzel">{t('generateAuthorStyleTitle')}</h2>
+                    <button onClick={onClose} className="text-gray-400 hover:text-gray-800 dark:hover:text-white text-3xl leading-none" aria-label={t('close')}>&times;</button>
+                </header>
+                <div className="p-4 flex-shrink-0 border-b border-gray-200 dark:border-gray-700 space-y-2">
+                    <label htmlFor="author-name" className="block text-sm font-medium text-gray-700 dark:text-gray-300">{t('authorNameLabel')}</label>
+                     <div className="flex gap-2">
+                        <input
+                            id="author-name"
+                            type="text"
+                            value={authorName}
+                            onChange={e => setAuthorName(e.target.value)}
+                            placeholder={t('authorNamePlaceholder')}
+                            className="flex-grow w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-md py-2 px-3 text-gray-800 dark:text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-cyan-500 transition"
+                            disabled={isLoading}
+                        />
+                        <button onClick={handleGenerate} disabled={isLoading || !authorName.trim()} className="flex items-center justify-center gap-2 bg-cyan-600 hover:bg-cyan-700 disabled:bg-gray-400 dark:disabled:bg-gray-600 text-white font-bold py-2 px-6 rounded-md transition-colors">
+                           {isLoading ? <LoadingSpinner /> : t('generate')}
+                        </button>
+                    </div>
+                </div>
+                <main className="p-4 flex-grow overflow-y-auto">
+                    {error && <div className="text-sm text-red-700 dark:text-red-400 bg-red-100 dark:bg-red-900/50 border border-red-300 dark:border-red-700 p-3 rounded-md mb-4">{error}</div>}
+                    <textarea
+                        value={generatedPrompt}
+                        readOnly
+                        className="w-full h-full bg-gray-100 dark:bg-gray-900 border-0 rounded-md py-2 px-3 text-gray-800 dark:text-gray-200 focus:outline-none resize-none font-mono text-sm"
+                        placeholder={isLoading ? '' : 'Generated style instructions will appear here...'}
+                    />
+                </main>
+                 <footer className="p-4 border-t border-gray-200 dark:border-gray-700 flex-shrink-0 bg-gray-50 dark:bg-gray-800/50">
+                     <button
+                        onClick={handleAccept}
+                        disabled={isLoading || !generatedPrompt}
+                        className="w-full flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 dark:disabled:bg-gray-600 text-white font-bold py-2 px-6 rounded-md transition-colors"
+                     >
+                        {t('accept')}
+                     </button>
+                </footer>
+            </div>
+        </div>
+    );
+};
+
 
 const GameSetup: React.FC<GameSetupProps> = ({ 
   onStartGame, 
@@ -37,7 +222,9 @@ const GameSetup: React.FC<GameSetupProps> = ({
   setLanguage,
   theme,
   setTheme,
-  t 
+  t,
+  gameEngineModel,
+  setGameEngineModel,
 }) => {
   const [setting, setSetting] = useState('Киберпанк-мегаполис под вечным дождем');
   const [description, setDescription] = useState('Бывший корпоративный детектив с кибернетической рукой, ищущий правду о своем прошлом.');
@@ -56,6 +243,15 @@ const GameSetup: React.FC<GameSetupProps> = ({
   const [isRandomizingSetting, setIsRandomizingSetting] = useState(false);
   const [isRandomizingDescription, setIsRandomizingDescription] = useState(false);
 
+  // New state for custom author style
+  const [isAuthorModalOpen, setIsAuthorModalOpen] = useState(false);
+  const [acceptedAuthorStyle, setAcceptedAuthorStyle] = useState<{ name: string; prompt: string } | null>(null);
+  
+  // New state for learning mode
+  const [isLearningModalOpen, setIsLearningModalOpen] = useState(false);
+  const [acceptedLearningPlan, setAcceptedLearningPlan] = useState<{ topic: string; plan: string } | null>(null);
+
+
   const styleLibrary = useMemo(() => styles[language], [language]);
 
   const saveFileInputRef = useRef<HTMLInputElement>(null);
@@ -64,11 +260,18 @@ const GameSetup: React.FC<GameSetupProps> = ({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     let finalNarrativeStyle = '';
-    if (customStyle.trim()) {
+    let learningTopic: string | undefined = undefined;
+
+    if (acceptedLearningPlan) {
+        finalNarrativeStyle = acceptedLearningPlan.plan;
+        learningTopic = acceptedLearningPlan.topic;
+    } else if (acceptedAuthorStyle) {
+        finalNarrativeStyle = acceptedAuthorStyle.prompt;
+    } else if (customStyle.trim()) {
       finalNarrativeStyle = customStyle;
     } else if (selectedStyleId) {
       for (const genre of Object.values(styleLibrary)) {
-        const found = genre.find((author: AuthorStyle) => author.id === selectedStyleId);
+        const found = (genre as AuthorStyle[]).find((author: AuthorStyle) => author.id === selectedStyleId);
         if (found) {
           finalNarrativeStyle = found.prompt;
           break;
@@ -77,26 +280,44 @@ const GameSetup: React.FC<GameSetupProps> = ({
     }
     
     if (setting.trim() && description.trim()) {
-      onStartGame({ setting, description, difficulty, narrativeStyle: finalNarrativeStyle, eventTimer, language });
+      onStartGame({ setting, description, difficulty, narrativeStyle: finalNarrativeStyle, eventTimer, language, gameEngineModel, learningTopic });
     }
   };
   
   const handleStyleSelect = (author: AuthorStyle | null) => {
       setSelectedStyleId(author ? author.id : null);
       setCustomStyle('');
+      setAcceptedAuthorStyle(null);
+      setAcceptedLearningPlan(null);
   };
 
   const handleCustomStyleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
       setCustomStyle(e.target.value);
       setSelectedStyleId(null);
+      setAcceptedAuthorStyle(null);
+      setAcceptedLearningPlan(null);
   }
+  
+  const handleAcceptAuthorStyle = (authorName: string, prompt: string) => {
+      setAcceptedAuthorStyle({ name: authorName, prompt: prompt });
+      setCustomStyle('');
+      setSelectedStyleId(null);
+      setAcceptedLearningPlan(null);
+  }
+  
+  const handleAcceptLearningPlan = (topic: string, plan: string) => {
+      setAcceptedLearningPlan({ topic, plan });
+      setAcceptedAuthorStyle(null);
+      setCustomStyle('');
+      setSelectedStyleId(null);
+  };
 
   const handleEnhanceSetting = async () => {
     if (!setting.trim() || isEnhancingSetting) return;
     setIsEnhancingSetting(true);
     setGenerationError(null);
     try {
-      const enhancedSetting = await generateEnhancedSetting(setting, language);
+      const enhancedSetting = await generateEnhancedSetting(setting, language, gameEngineModel);
       setSetting(enhancedSetting);
     } catch (err) {
       setGenerationError(err instanceof Error ? err.message : 'Неизвестная ошибка');
@@ -110,7 +331,7 @@ const GameSetup: React.FC<GameSetupProps> = ({
     setIsGeneratingCharacter(true);
     setGenerationError(null);
     try {
-      const generatedCharacter = await generateCharacter(setting, language);
+      const generatedCharacter = await generateCharacter(setting, language, gameEngineModel);
       setDescription(generatedCharacter);
     } catch (err)
  {
@@ -128,7 +349,7 @@ const GameSetup: React.FC<GameSetupProps> = ({
     setLoading(true);
     setGenerationError(null);
     try {
-      const randomValue = await generateRandomIdea(type, language);
+      const randomValue = await generateRandomIdea(type, language, gameEngineModel);
       setValue(randomValue);
     } catch (err) {
       setGenerationError(err instanceof Error ? err.message : 'Unknown error during randomization');
@@ -167,7 +388,7 @@ const GameSetup: React.FC<GameSetupProps> = ({
       if (text.trim().length === 0) {
         throw new Error("Файл пуст.");
       }
-      const summarizedSetting = await summarizeSettingFromFile(text, language);
+      const summarizedSetting = await summarizeSettingFromFile(text, language, gameEngineModel);
       setSetting(summarizedSetting);
     } catch (err) {
       setGenerationError(err instanceof Error ? err.message : 'Неизвестная ошибка при обработке файла.');
@@ -180,7 +401,7 @@ const GameSetup: React.FC<GameSetupProps> = ({
   };
 
   const anyLoading = isLoading || isEnhancingSetting || isSummarizing || isGeneratingCharacter || isRandomizingSetting || isRandomizingDescription;
-
+  const styleInputsDisabled = anyLoading || !!acceptedAuthorStyle || !!acceptedLearningPlan;
 
   return (
     <div className="w-full max-w-2xl mx-auto bg-gray-100/80 dark:bg-gray-800/50 p-6 md:p-8 rounded-lg shadow-2xl border border-gray-200 dark:border-gray-700 backdrop-blur-sm">
@@ -197,6 +418,24 @@ const GameSetup: React.FC<GameSetupProps> = ({
         onChange={handleSettingFileChange}
         className="hidden"
         accept=".txt,text/plain"
+      />
+      <CustomAuthorModal 
+        isOpen={isAuthorModalOpen}
+        onClose={() => setIsAuthorModalOpen(false)}
+        onAccept={handleAcceptAuthorStyle}
+        language={language}
+        t={t}
+        setting={setting}
+        description={description}
+      />
+      <LearningModeModal
+        isOpen={isLearningModalOpen}
+        onClose={() => setIsLearningModalOpen(false)}
+        onAccept={handleAcceptLearningPlan}
+        language={language}
+        t={t}
+        setting={setting}
+        description={description}
       />
 
       <div className="flex justify-between items-center mb-6 -mt-2">
@@ -315,6 +554,38 @@ const GameSetup: React.FC<GameSetupProps> = ({
         {/* New Style Selection UI */}
         <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{t('styleSelectionTitle')}</label>
+             {acceptedAuthorStyle && (
+                <div className="mb-4 p-3 bg-cyan-500/10 border-l-4 border-cyan-500 text-cyan-800 dark:text-cyan-200 rounded-r-md flex justify-between items-center">
+                    <div>
+                        <p className="font-semibold text-sm">{t('appliedStyle')}</p>
+                        <p>{acceptedAuthorStyle.name}</p>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={() => setAcceptedAuthorStyle(null)}
+                        className="text-2xl leading-none text-cyan-600 hover:text-cyan-800 dark:text-cyan-300 dark:hover:text-cyan-100 font-bold"
+                        title={t('clearStyle')}
+                    >
+                        &times;
+                    </button>
+                </div>
+            )}
+            {acceptedLearningPlan && (
+                <div className="mb-4 p-3 bg-green-500/10 border-l-4 border-green-500 text-green-800 dark:text-green-200 rounded-r-md flex justify-between items-center">
+                    <div>
+                        <p className="font-semibold text-sm">{t('appliedLearningPlan')}</p>
+                        <p>{acceptedLearningPlan.topic}</p>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={() => setAcceptedLearningPlan(null)}
+                        className="text-2xl leading-none text-green-600 hover:text-green-800 dark:text-green-300 dark:hover:text-green-100 font-bold"
+                        title={t('clearStyle')}
+                    >
+                        &times;
+                    </button>
+                </div>
+            )}
             <div className="bg-white dark:bg-gray-900/50 border border-gray-300 dark:border-gray-600 rounded-md p-3">
                 <div className="flex flex-wrap gap-2 border-b border-gray-200 dark:border-gray-700 pb-3 mb-3">
                     {Object.keys(styleLibrary).map(genre => (
@@ -322,20 +593,38 @@ const GameSetup: React.FC<GameSetupProps> = ({
                             key={genre}
                             type="button"
                             onClick={() => setSelectedGenre(genre)}
-                            disabled={anyLoading}
+                            disabled={styleInputsDisabled}
                             className={`px-3 py-1 text-sm rounded-md transition-colors disabled:opacity-50 ${selectedGenre === genre ? 'bg-cyan-600 text-white font-semibold' : 'bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600'}`}
                         >
                             {genre}
                         </button>
                     ))}
+                     <button
+                        key="custom-author"
+                        type="button"
+                        onClick={() => setIsAuthorModalOpen(true)}
+                        disabled={anyLoading || !!acceptedLearningPlan}
+                        className={'px-3 py-1 text-sm rounded-md transition-colors disabled:opacity-50 bg-purple-200 dark:bg-purple-900/50 hover:bg-purple-300 dark:hover:bg-purple-800/50 text-purple-800 dark:text-purple-200 font-semibold'}
+                    >
+                        {t('customAuthor')}
+                    </button>
+                    <button
+                        key="learning-mode"
+                        type="button"
+                        onClick={() => setIsLearningModalOpen(true)}
+                        disabled={anyLoading}
+                        className={'px-3 py-1 text-sm rounded-md transition-colors disabled:opacity-50 bg-green-200 dark:bg-green-900/50 hover:bg-green-300 dark:hover:bg-green-800/50 text-green-800 dark:text-green-200 font-semibold'}
+                    >
+                        {t('learningMode')}
+                    </button>
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                      <button
                         type="button"
                         onClick={() => handleStyleSelect(null)}
-                        disabled={anyLoading}
+                        disabled={styleInputsDisabled}
                         title={t('noneStyleTooltip')}
-                        className={`w-full text-left p-2 rounded-md border-2 transition-colors ${!selectedStyleId && !customStyle.trim() ? 'border-cyan-500 bg-cyan-500/10' : 'border-transparent bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700'}`}
+                        className={`w-full text-left p-2 rounded-md border-2 transition-colors ${!selectedStyleId && !customStyle.trim() && !acceptedAuthorStyle && !acceptedLearningPlan ? 'border-cyan-500 bg-cyan-500/10' : 'border-transparent bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700'}`}
                     >
                        <span className="font-semibold text-gray-800 dark:text-gray-200">{t('none')}</span>
                     </button>
@@ -344,7 +633,7 @@ const GameSetup: React.FC<GameSetupProps> = ({
                             key={authorStyle.id}
                             type="button"
                             onClick={() => handleStyleSelect(authorStyle)}
-                            disabled={anyLoading}
+                            disabled={styleInputsDisabled}
                             title={authorStyle.tooltip}
                             className={`w-full text-left p-2 rounded-md border-2 transition-colors ${selectedStyleId === authorStyle.id ? 'border-cyan-500 bg-cyan-500/10' : 'border-transparent bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700'}`}
                         >
@@ -364,24 +653,37 @@ const GameSetup: React.FC<GameSetupProps> = ({
                 className="w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-md py-2 px-3 text-gray-800 dark:text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-cyan-500 transition"
                 placeholder={t('customStylePlaceholder')}
                 rows={3}
-                disabled={anyLoading}
+                disabled={styleInputsDisabled}
             />
         </div>
         
-        <div>
-          <label htmlFor="event-timer" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-            {t('turnsUntilRandomEvent')}
-          </label>
-          <input
-            id="event-timer"
-            type="number"
-            value={eventTimer}
-            onChange={(e) => setEventTimer(Math.max(1, parseInt(e.target.value, 10) || 1))}
-            className="w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-md py-2 px-3 text-gray-800 dark:text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-cyan-500 transition"
-            min="1"
-            required
-            disabled={anyLoading}
-          />
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+              <label htmlFor="event-timer" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                {t('turnsUntilRandomEvent')}
+              </label>
+              <input
+                id="event-timer"
+                type="number"
+                value={eventTimer}
+                onChange={(e) => setEventTimer(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                className="w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-md py-2 px-3 text-gray-800 dark:text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-cyan-500 transition"
+                min="1"
+                required
+                disabled={anyLoading}
+              />
+            </div>
+            <div>
+                <span className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{t('gameEngine')}</span>
+                <div className="flex bg-gray-200 dark:bg-gray-900 rounded-lg p-1 space-x-1">
+                    <button type="button" onClick={() => setGameEngineModel('gemini-2.5-flash')} disabled={anyLoading} className={`w-full text-center py-1.5 rounded-md transition-colors text-sm font-semibold ${gameEngineModel === 'gemini-2.5-flash' ? 'bg-cyan-600 text-white shadow' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-700'}`}>
+                        ⚡️ {t('fast')}
+                    </button>
+                    <button type="button" onClick={() => setGameEngineModel('gemini-2.5-pro')} disabled={anyLoading} className={`w-full text-center py-1.5 rounded-md transition-colors text-sm font-semibold ${gameEngineModel === 'gemini-2.5-pro' ? 'bg-purple-600 text-white shadow' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-700'}`}>
+                        💎 {t('quality')}
+                    </button>
+                </div>
+            </div>
         </div>
 
         <div>
